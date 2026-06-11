@@ -374,7 +374,7 @@ function SearchPageClient() {
                           `/search?q=${encodeURIComponent(item.trim())}`
                         );
                       }}
-                      className='px-5 py-2.5 rounded-full text-sm text-gray-300 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 transition-all duration-200 dark:text-gray-300 dark:bg-white/5 dark:hover:bg-white/10 dark:border-white/10 dark:hover:border-white/20'
+                      className='px-5 py-2.5 rounded-full text-sm text-gray-700 bg-gray-100 hover:bg-gray-200 border border-gray-200 hover:border-gray-300 transition-all duration-200 dark:text-gray-300 dark:bg-white/5 dark:hover:bg-white/10 dark:border-white/10 dark:hover:border-white/20'
                     >
                       {item}
                     </button>
