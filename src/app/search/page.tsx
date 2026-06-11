@@ -242,13 +242,13 @@ function SearchPageClient() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder='搜索电影、电视剧...'
-                className='w-full h-14 rounded-full bg-white dark:bg-[#1a1a2e]/80 py-3 pl-14 pr-12 text-base text-gray-900 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-400/50 focus:bg-white dark:focus:bg-[#1a1a2e] border border-gray-200 dark:border-white/10 shadow-sm dark:shadow-lg dark:shadow-black/20 transition-all duration-300'
+                className='w-full h-14 rounded-full bg-[#1a1a2e]/80 dark:bg-[#1a1a2e]/80 py-3 pl-14 pr-12 text-base text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-400/50 focus:bg-[#1a1a2e] border border-white/10 shadow-lg shadow-black/20 transition-all duration-300 dark:text-gray-200 dark:placeholder-gray-600 dark:focus:bg-[#1a1a2e] dark:border-white/10'
               />
               {searchQuery && (
                 <button
                   type='button'
                   onClick={() => setSearchQuery('')}
-                  className='absolute right-4 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center rounded-full bg-gray-200 dark:bg-white/10 hover:bg-gray-300 dark:hover:bg-white/20 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-all'
+                  className='absolute right-4 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-gray-400 hover:text-gray-200 transition-all'
                 >
                   <X className='w-4 h-4' />
                 </button>
@@ -287,7 +287,7 @@ function SearchPageClient() {
                         setViewMode(viewMode === 'agg' ? 'all' : 'agg')
                       }
                     />
-                    <div className='w-11 h-6 bg-gray-300 dark:bg-gray-700 rounded-full peer-checked:bg-green-500 transition-colors duration-300'></div>
+                    <div className='w-11 h-6 bg-gray-700 rounded-full peer-checked:bg-green-500 transition-colors duration-300'></div>
                     <div className='absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform duration-300 peer-checked:translate-x-5'></div>
                   </div>
                 </label>
@@ -374,7 +374,7 @@ function SearchPageClient() {
                           `/search?q=${encodeURIComponent(item.trim())}`
                         );
                       }}
-                      className='px-5 py-2.5 rounded-full text-sm text-gray-700 bg-gray-100 hover:bg-gray-200 border border-gray-200 hover:border-gray-300 transition-all duration-200 dark:text-gray-300 dark:bg-white/5 dark:hover:bg-white/10 dark:border-white/10 dark:hover:border-white/20'
+                      className='px-5 py-2.5 rounded-full text-sm text-gray-300 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 transition-all duration-200 dark:text-gray-300 dark:bg-white/5 dark:hover:bg-white/10 dark:border-white/10 dark:hover:border-white/20'
                     >
                       {item}
                     </button>

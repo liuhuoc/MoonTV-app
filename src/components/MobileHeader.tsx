@@ -1,11 +1,10 @@
 'use client';
 
 import Link from 'next/link';
+import { Settings } from 'lucide-react';
 
 import { BackButton } from './BackButton';
 import { useSite } from './SiteProvider';
-import { ThemeToggle } from './ThemeToggle';
-import { UserMenu } from './UserMenu';
 
 interface MobileHeaderProps {
   showBackButton?: boolean;
@@ -31,10 +30,15 @@ const MobileHeader = ({ showBackButton = false }: MobileHeaderProps) => {
           </Link>
         </div>
 
-        {/* 右侧：主题切换 + 设置 */}
-        <div className="flex items-center gap-0.5">
-          <ThemeToggle />
-          <UserMenu />
+        {/* 右侧：设置入口 */}
+        <div className="flex items-center justify-end w-10">
+          <Link
+            href="/settings"
+            className="p-1.5 rounded-lg text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+            aria-label="设置"
+          >
+            <Settings size={18} />
+          </Link>
         </div>
       </div>
     </header>

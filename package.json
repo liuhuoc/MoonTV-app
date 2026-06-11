@@ -25,6 +25,7 @@
     "@capacitor/android": "^7.4.2",
     "@capacitor/core": "^7.4.2",
     "@capacitor/filesystem": "^8.1.2",
+    "@capacitor/http": "^0.0.2",
     "@capacitor/screen-orientation": "^7.0.1",
     "@capacitor/status-bar": "^7.0.2",
     "@cloudflare/next-on-pages": "^1.13.12",
