@@ -128,7 +128,11 @@ export async function getDoubanCategories(
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP error! Status: ${response.status}`);
+      return {
+        code: response.status,
+        message: `豆瓣API返回错误: ${response.status}`,
+        list: [],
+      };
     }
 
     let list: DoubanItem[];
@@ -182,6 +186,11 @@ export async function getDoubanCategories(
       list,
     };
   } catch (error) {
-    throw new Error(`获取豆瓣分类数据失败: ${(error as Error).message}`);
+    console.error('豆瓣API请求失败:', error);
+    return {
+      code: 500,
+      message: `请求失败: ${(error as Error).message}`,
+      list: [],
+    };
   }
 }

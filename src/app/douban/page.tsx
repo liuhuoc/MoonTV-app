@@ -159,7 +159,8 @@ function DoubanPageClient() {
         });
 
         if (data.code !== 200) {
-          throw new Error(data.message || '获取数据失败');
+          console.warn('豆瓣时间排序加载失败:', data.message);
+          return { collected: [], nextYear, nextStart, exhausted: true };
         }
 
         if (data.list.length > 0) {
@@ -214,7 +215,10 @@ function DoubanPageClient() {
         );
         setLoading(false);
       } else {
-        throw new Error(data.message || '获取数据失败');
+        console.warn('初始数据加载失败:', data.message);
+        setDoubanData([]);
+        setHasMore(false);
+        setLoading(false);
       }
     } catch (err) {
       console.error(err);
@@ -308,7 +312,8 @@ function DoubanPageClient() {
               type === 'movie' ? data.list.length > 0 : data.list.length === pageSize
             );
           } else {
-            throw new Error(data.message || '获取数据失败');
+            console.warn('加载更多数据失败:', data.message);
+            setHasMore(false);
           }
         } catch (err) {
           console.error(err);
