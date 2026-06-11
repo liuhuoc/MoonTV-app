@@ -11,6 +11,7 @@ import React, {
 
 import { SearchResult } from '@/lib/types';
 import { getVideoResolutionFromM3u8, processImageUrl } from '@/lib/utils';
+import { addDownloadTask, startDownload } from '@/lib/download';
 
 // 定义视频信息类型
 interface VideoInfo {
@@ -40,6 +41,10 @@ interface EpisodeSelectorProps {
   sourceSearchError?: string | null;
   /** 预计算的测速结果，避免重复测速 */
   precomputedVideoInfo?: Map<string, VideoInfo>;
+  /** 当前播放的集数 URL（用于下载） */
+  currentEpisodeUrl?: string;
+  /** 当前集数标签 */
+  currentEpisodeLabel?: string;
 }
 
 /**
@@ -73,6 +78,24 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
   // 使用 ref 来避免闭包问题
   const attemptedSourcesRef = useRef<Set<string>>(new Set());
   const videoInfoMapRef = useRef<Map<string, VideoInfo>>(new Map());
+
+  // 下载指定剧集
+  const handleDownloadEpisode = useCallback(
+    (url: string, label: string) => {
+      if (!url) return;
+      const sourceName = availableSources.find(
+        (s) => s.source === currentSource && s.id === currentId
+      )?.source_name || '';
+      const task = addDownloadTask({
+        title: videoTitle || '未知',
+        episodeLabel: label,
+        sourceName,
+        url,
+      });
+      startDownload(task.id);
+    },
+    [videoTitle, availableSources, currentSource, currentId]
+  );
 
   // 同步状态到 ref
   useEffect(() => {
@@ -539,11 +562,28 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                             <span className='text-xs px-2 py-1 border border-gray-500/60 rounded text-gray-700 dark:text-gray-300'>
                               {source.source_name}
                             </span>
-                            {source.episodes.length > 1 && (
-                              <span className='text-xs text-gray-500 dark:text-gray-400 font-medium'>
-                                {source.episodes.length} 集
-                              </span>
-                            )}
+                            <div className='flex items-center gap-1.5'>
+                              {source.episodes.length > 1 && (
+                                <span className='text-xs text-gray-500 dark:text-gray-400 font-medium'>
+                                  {source.episodes.length} 集
+                                </span>
+                              )}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const url = source.episodes[0];
+                                  handleDownloadEpisode(url, '全剧');
+                                }}
+                                className='p-1 rounded-full hover:bg-blue-500/10 text-gray-400 hover:text-blue-500 transition-colors'
+                                title='下载此源'
+                              >
+                                <svg className='w-3.5 h-3.5' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2' strokeLinecap='round' strokeLinejoin='round'>
+                                  <path d='M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4' />
+                                  <polyline points='7 10 12 15 17 10' />
+                                  <line x1='12' y1='15' x2='12' y2='3' />
+                                </svg>
+                              </button>
+                            </div>
                           </div>
 
                           {/* 网络信息 - 底部 */}

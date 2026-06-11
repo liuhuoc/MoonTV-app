@@ -6,7 +6,7 @@ import { ScreenOrientation } from '@capacitor/screen-orientation';
 import { StatusBar } from '@capacitor/status-bar';
 import Artplayer from 'artplayer';
 import Hls from 'hls.js';
-import { Heart } from 'lucide-react';
+import { Heart, Download } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useRef, useState } from 'react';
 
@@ -23,9 +23,10 @@ import {
   saveSkipConfig,
   subscribeToDataUpdates,
 } from '@/lib/db.client';
-import { fetchVideoDetail, downstreamSearch } from '@/lib/downstream';
+import { fetchVideoDetail, downstreamSearchFast } from '@/lib/downstream';
 import { SearchResult } from '@/lib/types';
 import { getVideoResolutionFromM3u8, processImageUrl } from '@/lib/utils';
+import { addDownloadTask, startDownload } from '@/lib/download';
 
 import EpisodeSelector from '@/components/EpisodeSelector';
 import PageLayout from '@/components/PageLayout';
@@ -557,71 +558,29 @@ function PlayPageClient() {
       // 根据搜索词获取全部源信息
       try {
         const trimmedQuery = query.trim();
-        const allResults = await downstreamSearch(trimmedQuery);
+        const [fastResults, getRemaining] = await downstreamSearchFast(trimmedQuery, 6);
         const normalizedDoubanId = doubanId.trim();
-        const isNumericQuery = /^\d+$/.test(trimmedQuery);
 
-        if (normalizedDoubanId) {
-          const doubanMatched = allResults.filter(
-            (result) =>
-              result.douban_id && String(result.douban_id) === normalizedDoubanId
-          );
-          if (doubanMatched.length > 0) {
-            setAvailableSources(doubanMatched);
-            return doubanMatched;
-          }
-        }
+        // 后台继续加载剩余源
+        getRemaining().then((remainingResults) => {
+          setAvailableSources((prev) => {
+            const allResults = filterAndMergeResults(
+              [...prev, ...remainingResults],
+              normalizedDoubanId,
+              trimmedQuery
+            );
+            return allResults;
+          });
+        }).catch((err) => { console.warn('后台源加载失败:', err); });
 
-        if (isNumericQuery && normalizedDoubanId) {
-          setAvailableSources(allResults);
-          return allResults;
-        }
-
-        const expectedTitle = normalizeTitleForMatch(videoTitleRef.current);
-        const queryTitle = normalizeTitleForMatch(trimmedQuery);
-
-        // 处理搜索结果，根据规则过滤
-        const typeMatches = (result: SearchResult) => {
-          if (!searchType) return true;
-          if (searchType === 'tv') return result.episodes.length > 1;
-          if (searchType === 'movie') return result.episodes.length === 1;
-          return true;
-        };
-
-        const yearMatches = (result: SearchResult) => {
-          if (!videoYearRef.current) return true;
-          const y = (result.year || '').toLowerCase();
-          const expected = videoYearRef.current.toLowerCase();
-          if (!y || y === 'unknown') return true;
-          if (!expected || expected === 'unknown') return true;
-          return y === expected;
-        };
-
-        const titleMatches = (result: SearchResult) => {
-          const t = normalizeTitleForMatch(result.title || '');
-          if (!t) return false;
-          if (expectedTitle) {
-            return t === expectedTitle || t.includes(expectedTitle) || expectedTitle.includes(t);
-          }
-          return queryTitle ? t.includes(queryTitle) || queryTitle.includes(t) : true;
-        };
-
-        let results = allResults.filter(
-          (result) => titleMatches(result) && yearMatches(result) && typeMatches(result)
+        // 先使用快速结果
+        const allResults = filterAndMergeResults(
+          fastResults,
+          normalizedDoubanId,
+          trimmedQuery
         );
-
-        if (results.length === 0) {
-          results = allResults.filter(
-            (result) => titleMatches(result) && typeMatches(result)
-          );
-        }
-
-        if (results.length === 0 && allResults.length > 0) {
-          results = allResults;
-        }
-
-        setAvailableSources(results);
-        return results;
+        setAvailableSources(allResults);
+        return allResults;
       } catch (err) {
         setSourceSearchError(err instanceof Error ? err.message : '搜索失败');
         setAvailableSources([]);
@@ -629,6 +588,71 @@ function PlayPageClient() {
       } finally {
         setSourceSearchLoading(false);
       }
+    };
+
+    const filterAndMergeResults = (
+      allResults: SearchResult[],
+      normalizedDoubanId: string,
+      trimmedQuery: string
+    ): SearchResult[] => {
+      if (normalizedDoubanId) {
+        const doubanMatched = allResults.filter(
+          (result) =>
+            result.douban_id && String(result.douban_id) === normalizedDoubanId
+        );
+        if (doubanMatched.length > 0) {
+          return doubanMatched;
+        }
+      }
+
+      const isNumericQuery = /^\d+$/.test(trimmedQuery);
+      if (isNumericQuery && normalizedDoubanId) {
+        return allResults;
+      }
+
+      const expectedTitle = normalizeTitleForMatch(videoTitleRef.current);
+      const queryTitle = normalizeTitleForMatch(trimmedQuery);
+
+      const typeMatches = (result: SearchResult) => {
+        if (!searchType) return true;
+        if (searchType === 'tv') return result.episodes.length > 1;
+        if (searchType === 'movie') return result.episodes.length === 1;
+        return true;
+      };
+
+      const yearMatches = (result: SearchResult) => {
+        if (!videoYearRef.current) return true;
+        const y = (result.year || '').toLowerCase();
+        const expected = videoYearRef.current.toLowerCase();
+        if (!y || y === 'unknown') return true;
+        if (!expected || expected === 'unknown') return true;
+        return y === expected;
+      };
+
+      const titleMatches = (result: SearchResult) => {
+        const t = normalizeTitleForMatch(result.title || '');
+        if (!t) return false;
+        if (expectedTitle) {
+          return t === expectedTitle || t.includes(expectedTitle) || expectedTitle.includes(t);
+        }
+        return queryTitle ? t.includes(queryTitle) || queryTitle.includes(t) : true;
+      };
+
+      let results = allResults.filter(
+        (result) => titleMatches(result) && yearMatches(result) && typeMatches(result)
+      );
+
+      if (results.length === 0) {
+        results = allResults.filter(
+          (result) => titleMatches(result) && typeMatches(result)
+        );
+      }
+
+      if (results.length === 0 && allResults.length > 0) {
+        results = allResults;
+      }
+
+      return results;
     };
 
     const initAll = async () => {
@@ -1143,6 +1167,23 @@ function PlayPageClient() {
     } catch (err) {
       console.error('切换收藏失败:', err);
     }
+  };
+
+  // 下载当前剧集
+  const handleDownloadEpisode = async () => {
+    const d = detailRef.current;
+    if (!d || !d.episodes || currentEpisodeIndex >= d.episodes.length) return;
+    const url = d.episodes[currentEpisodeIndex];
+    const label = d.episodes.length > 1
+      ? `第${currentEpisodeIndex + 1}集`
+      : '完整版';
+    const task = addDownloadTask({
+      title: videoTitleRef.current || d.title || '未知',
+      episodeLabel: label,
+      sourceName: d.source_name || '',
+      url,
+    });
+    startDownload(task.id);
   };
 
   useEffect(() => {
@@ -2076,6 +2117,16 @@ function PlayPageClient() {
                   className='ml-3 flex-shrink-0 hover:scale-110 transition-transform duration-200'
                 >
                   <FavoriteIcon filled={favorited} />
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDownloadEpisode();
+                  }}
+                  className='ml-2 flex-shrink-0 hover:scale-110 transition-transform duration-200'
+                  title='下载当前剧集'
+                >
+                  <Download className='h-6 w-6 stroke-[1.5] text-gray-400 dark:text-gray-500 hover:text-blue-400 dark:hover:text-blue-400 transition-colors duration-200' />
                 </button>
               </h1>
 

@@ -373,13 +373,16 @@ async function handleSpecialSourceDetail(
  * 聚合搜索：从所有可用源并发搜索
  */
 export async function downstreamSearch(
-  query: string
+  query: string,
+  /** 可选：限制搜索的源数量（前 N 个），用于快速返回首屏 */
+  limitSources?: number
 ): Promise<SearchResult[]> {
   const apiSites = await getAvailableApiSites();
+  const targetSites = limitSources ? apiSites.slice(0, limitSources) : apiSites;
   const results: SearchResult[] = [];
 
   const siteResults = await Promise.all(
-    apiSites.map(async (site) => {
+    targetSites.map(async (site) => {
       try {
         return await searchFromApi(site, query);
       } catch {
@@ -390,6 +393,48 @@ export async function downstreamSearch(
 
   siteResults.forEach((r) => results.push(...r));
   return results;
+}
+
+/**
+ * 增量搜索：先返回前 N 个源的结果，剩余源继续后台搜索
+ * 返回 [fastResults, remainingPromise]
+ */
+export async function downstreamSearchFast(
+  query: string,
+  fastCount = 6
+): Promise<[SearchResult[], () => Promise<SearchResult[]>]> {
+  const apiSites = await getAvailableApiSites();
+  const fastSites = apiSites.slice(0, fastCount);
+  const remainingSites = apiSites.slice(fastCount);
+
+  const fastResults: SearchResult[] = [];
+  const fastSiteResults = await Promise.all(
+    fastSites.map(async (site) => {
+      try {
+        return await searchFromApi(site, query);
+      } catch {
+        return [];
+      }
+    })
+  );
+  fastSiteResults.forEach((r) => fastResults.push(...r));
+
+  const remainingPromise = async (): Promise<SearchResult[]> => {
+    const remainingResults: SearchResult[] = [];
+    const remainingSiteResults = await Promise.all(
+      remainingSites.map(async (site) => {
+        try {
+          return await searchFromApi(site, query);
+        } catch {
+          return [];
+        }
+      })
+    );
+    remainingSiteResults.forEach((r) => remainingResults.push(...r));
+    return remainingResults;
+  };
+
+  return [fastResults, remainingPromise];
 }
 
 /**
