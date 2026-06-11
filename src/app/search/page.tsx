@@ -12,7 +12,7 @@ import {
   getSearchHistory,
   subscribeToDataUpdates,
 } from '@/lib/db.client';
-import { SearchResult } from '@/lib/types';
+import { downstreamSearch } from '@/lib/downstream';
 
 import PageLayout from '@/components/PageLayout';
 import VideoCard from '@/components/VideoCard';
@@ -28,7 +28,7 @@ function SearchPageClient() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [showResults, setShowResults] = useState(false);
-  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [searchResults, setSearchResults] = useState<any[]>([]);
 
   // 获取默认聚合设置：只读取用户本地设置，默认为 true
   const getDefaultAggregate = () => {
@@ -47,7 +47,7 @@ function SearchPageClient() {
 
   // 聚合后的结果（按标题和年份分组）
   const aggregatedResults = useMemo(() => {
-    const map = new Map<string, SearchResult[]>();
+    const map = new Map<string, any[]>();
     searchResults.forEach((item) => {
       // 使用 title + year + type 作为键，year 必然存在，但依然兜底 'unknown'
       const key = `${item.title.replaceAll(' ', '')}-${
@@ -161,37 +161,33 @@ function SearchPageClient() {
   const fetchSearchResults = async (query: string) => {
     try {
       setIsLoading(true);
-      const response = await fetch(
-        `/api/search?q=${encodeURIComponent(query.trim())}`
-      );
-      const data = await response.json();
-      setSearchResults(
-        data.results.sort((a: SearchResult, b: SearchResult) => {
-          // 优先排序：标题与搜索词完全一致的排在前面
-          const aExactMatch = a.title === query.trim();
-          const bExactMatch = b.title === query.trim();
+      const results = await downstreamSearch(query);
+      const sorted = results.sort((a: any, b: any) => {
+        // 优先排序：标题与搜索词完全一致的排在前面
+        const aExactMatch = a.title === query.trim();
+        const bExactMatch = b.title === query.trim();
 
-          if (aExactMatch && !bExactMatch) return -1;
-          if (!aExactMatch && bExactMatch) return 1;
+        if (aExactMatch && !bExactMatch) return -1;
+        if (!aExactMatch && bExactMatch) return 1;
 
-          // 如果都匹配或都不匹配，则按原来的逻辑排序
-          if (a.year === b.year) {
-            return a.title.localeCompare(b.title);
+        // 如果都匹配或都不匹配，则按原来的逻辑排序
+        if (a.year === b.year) {
+          return a.title.localeCompare(b.title);
+        } else {
+          // 处理 unknown 的情况
+          if (a.year === 'unknown' && b.year === 'unknown') {
+            return 0;
+          } else if (a.year === 'unknown') {
+            return 1; // a 排在后面
+          } else if (b.year === 'unknown') {
+            return -1; // b 排在后面
           } else {
-            // 处理 unknown 的情况
-            if (a.year === 'unknown' && b.year === 'unknown') {
-              return 0;
-            } else if (a.year === 'unknown') {
-              return 1; // a 排在后面
-            } else if (b.year === 'unknown') {
-              return -1; // b 排在后面
-            } else {
-              // 都是数字年份，按数字大小排序（大的在前面）
-              return parseInt(a.year) > parseInt(b.year) ? -1 : 1;
-            }
+            // 都是数字年份，按数字大小排序（大的在前面）
+            return parseInt(a.year) > parseInt(b.year) ? -1 : 1;
           }
-        })
-      );
+        }
+      });
+      setSearchResults(sorted);
       setShowResults(true);
     } catch (error) {
       setSearchResults([]);

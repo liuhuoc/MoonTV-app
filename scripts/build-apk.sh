@@ -31,7 +31,7 @@ pnpm install
 
 # 构建Next.js项目
 echo "🔨 构建Next.js项目..."
-pnpm build
+CAPACITOR=true pnpm build
 
 # 同步到Capacitor
 if [ -n "$SERVER_URL" ]; then

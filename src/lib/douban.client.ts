@@ -1,5 +1,5 @@
 import { DoubanItem, DoubanResult } from './types';
-import { getDoubanProxyUrl } from './utils';
+import { nativeFetch } from './capacitor-http';
 
 interface DoubanCategoriesParams {
   kind: 'tv' | 'movie';
@@ -48,57 +48,13 @@ interface DoubanSubjectCollectionApiResponse {
 }
 
 /**
- * 带超时的 fetch 请求
+ * 客户端豆瓣分类数据获取函数（使用 Capacitor HTTP 绕过 CORS）
  */
-async function fetchWithTimeout(
-  url: string,
-  options: RequestInit = {}
-): Promise<Response> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 10000); // 10秒超时
-
-  // 检查是否使用代理
-  const proxyUrl = getDoubanProxyUrl();
-  const finalUrl = proxyUrl ? `${proxyUrl}${encodeURIComponent(url)}` : url;
-
-  const fetchOptions: RequestInit = {
-    ...options,
-    signal: controller.signal,
-    headers: {
-      'User-Agent':
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-      Referer: 'https://movie.douban.com/',
-      Accept: 'application/json, text/plain, */*',
-      ...options.headers,
-    },
-  };
-
-  try {
-    const response = await fetch(finalUrl, fetchOptions);
-    clearTimeout(timeoutId);
-    return response;
-  } catch (error) {
-    clearTimeout(timeoutId);
-    throw error;
-  }
-}
-
-/**
- * 检查是否应该使用客户端获取豆瓣数据
- */
-export function shouldUseDoubanClient(): boolean {
-  return getDoubanProxyUrl() !== null;
-}
-
-/**
- * 浏览器端豆瓣分类数据获取函数
- */
-export async function fetchDoubanCategories(
+export async function getDoubanCategories(
   params: DoubanCategoriesParams
 ): Promise<DoubanResult> {
   const { kind, category, type, year, sort, pageLimit = 20, pageStart = 0 } = params;
 
-  // 验证参数
   if (!['tv', 'movie'].includes(kind)) {
     throw new Error('kind 参数必须是 tv 或 movie');
   }
@@ -107,48 +63,13 @@ export async function fetchDoubanCategories(
     throw new Error('category 和 type 参数不能为空');
   }
 
-  if (pageLimit < 1 || pageLimit > 100) {
-    throw new Error('pageLimit 必须在 1-100 之间');
-  }
-
-  if (pageStart < 0) {
-    throw new Error('pageStart 不能小于 0');
-  }
-
   const movieGenresFromSelector = new Set([
-    '剧情',
-    '喜剧',
-    '爱情',
-    '动作',
-    '惊悚',
-    '犯罪',
-    '悬疑',
-    '恐怖',
-    '科幻',
-    '奇幻',
-    '传记',
-    '战争',
-    '家庭',
-    '冒险',
-    '人性',
-    '青春',
+    '剧情', '喜剧', '爱情', '动作', '惊悚', '犯罪', '悬疑', '恐怖',
+    '科幻', '奇幻', '传记', '战争', '家庭', '冒险', '人性', '青春',
   ]);
   const movieRegionsFromSelector = new Set([
-    '全部',
-    '大陆',
-    '美国',
-    '香港',
-    '台湾',
-    '日本',
-    '韩国',
-    '英国',
-    '法国',
-    '德国',
-    '意大利',
-    '西班牙',
-    '印度',
-    '泰国',
-    '俄罗斯',
+    '全部', '大陆', '美国', '香港', '台湾', '日本', '韩国', '英国',
+    '法国', '德国', '意大利', '西班牙', '印度', '泰国', '俄罗斯',
   ]);
   const currentYear = new Date().getFullYear();
   const movieYearsFromSelector = new Set(
@@ -163,6 +84,7 @@ export async function fetchDoubanCategories(
 
   const isMovieSubjectCollection =
     kind === 'movie' && category.startsWith('movie_');
+
   const tags = isMovieTagsFilter
     ? [category === '全部' ? null : category, type === '全部' ? null : type].filter(
         (v): v is string => Boolean(v)
@@ -171,15 +93,10 @@ export async function fetchDoubanCategories(
   const yearRange =
     isMovieTagsFilter && year && year !== '全部' ? `${year},${year}` : null;
   const sortValue =
-    sort === '人气'
-      ? 'U'
-      : sort === '评分'
-        ? 'S'
-        : sort === '时间'
-          ? 'T'
-          : sort && ['T', 'U', 'S', 'R'].includes(sort)
-            ? sort
-            : 'T';
+    sort === '人气' ? 'U'
+    : sort === '评分' ? 'S'
+    : sort === '时间' ? 'T'
+    : sort && ['T', 'U', 'S', 'R'].includes(sort) ? sort : 'T';
 
   const target = isMovieSubjectCollection
     ? `https://m.douban.com/rexxar/api/v2/subject_collection/${category}/items?start=${pageStart}&count=${pageLimit}`
@@ -200,8 +117,14 @@ export async function fetchDoubanCategories(
       : `https://m.douban.com/rexxar/api/v2/subject/recent_hot/${kind}?start=${pageStart}&limit=${pageLimit}&category=${category}&type=${type}`;
 
   try {
-    const response = await fetchWithTimeout(target, {
-      headers: isMovieTagsFilter ? { Referer: 'https://movie.douban.com/explore' } : {},
+    const response = await nativeFetch(target, {
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+        Referer: isMovieTagsFilter ? 'https://movie.douban.com/explore' : 'https://movie.douban.com/',
+        Accept: 'application/json, text/plain, */*',
+      },
+      timeout: 10000,
     });
 
     if (!response.ok) {
@@ -260,57 +183,5 @@ export async function fetchDoubanCategories(
     };
   } catch (error) {
     throw new Error(`获取豆瓣分类数据失败: ${(error as Error).message}`);
-  }
-}
-
-/**
- * 统一的豆瓣分类数据获取函数，根据代理设置选择使用服务端 API 或客户端代理获取
- */
-export async function getDoubanCategories(
-  params: DoubanCategoriesParams
-): Promise<DoubanResult> {
-  // 检查是否在开发环境（有API路由可用）
-  const isDevelopment = typeof window !== 'undefined' && (
-    window.location.hostname === 'localhost' || 
-    window.location.hostname === '127.0.0.1' ||
-    window.location.port === '3000' // 检查端口号来判断开发环境
-  );
-
-  // 检查是否设置了豆瓣代理
-  const hasProxy = shouldUseDoubanClient();
-
-  if (isDevelopment && !hasProxy) {
-    // 开发环境且没有代理时，使用服务端 API
-    const { kind, category, type, year, sort, pageLimit = 20, pageStart = 0 } = params;
-    const searchParams = new URLSearchParams({
-      kind,
-      category,
-      type,
-      limit: String(pageLimit),
-      start: String(pageStart),
-    });
-    if (year) {
-      searchParams.set('year', year);
-    }
-    if (sort) {
-      searchParams.set('sort', sort);
-    }
-    const response = await fetch(`/api/douban/categories/?${searchParams}`);
-
-    if (!response.ok) {
-      throw new Error('获取豆瓣分类数据失败');
-    }
-
-    return response.json();
-  } else if (hasProxy) {
-    // 有代理时，使用客户端直接获取
-    return fetchDoubanCategories(params);
-  } else {
-    // 生产环境且没有代理，返回空数据
-    return {
-      code: 200,
-      message: '豆瓣数据获取功能需要配置代理',
-      list: []
-    };
   }
 }

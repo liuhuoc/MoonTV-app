@@ -1,6 +1,7 @@
-import { API_CONFIG, ApiSite, getConfig } from '@/lib/config';
+import { getAvailableApiSites } from '@/lib/config';
 import { SearchResult } from '@/lib/types';
 import { cleanHtmlTags } from '@/lib/utils';
+import { nativeFetch } from '@/lib/capacitor-http';
 
 interface ApiSearchItem {
   vod_id: string;
@@ -15,6 +16,33 @@ interface ApiSearchItem {
   type_name?: string;
 }
 
+export interface ApiSite {
+  key: string;
+  api: string;
+  name: string;
+  detail?: string;
+}
+
+export const API_CONFIG = {
+  search: {
+    path: '?ac=videolist&wd=',
+    pagePath: '?ac=videolist&wd={query}&pg={page}',
+    headers: {
+      'User-Agent':
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+      Accept: 'application/json',
+    },
+  },
+  detail: {
+    path: '?ac=videolist&ids=',
+    headers: {
+      'User-Agent':
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+      Accept: 'application/json',
+    },
+  },
+};
+
 export async function searchFromApi(
   apiSite: ApiSite,
   query: string
@@ -25,16 +53,10 @@ export async function searchFromApi(
       apiBaseUrl + API_CONFIG.search.path + encodeURIComponent(query);
     const apiName = apiSite.name;
 
-    // 添加超时处理
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000);
-
-    const response = await fetch(apiUrl, {
+    const response = await nativeFetch(apiUrl, {
       headers: API_CONFIG.search.headers,
-      signal: controller.signal,
+      timeout: 8000,
     });
-
-    clearTimeout(timeoutId);
 
     if (!response.ok) {
       return [];
@@ -49,16 +71,13 @@ export async function searchFromApi(
     ) {
       return [];
     }
-    // 处理第一页结果
+
     const results = data.list.map((item: ApiSearchItem) => {
       let episodes: string[] = [];
 
-      // 使用正则表达式从 vod_play_url 提取 m3u8 链接
       if (item.vod_play_url) {
         const m3u8Regex = /\$(https?:\/\/[^"'\s]+?\.m3u8)/g;
-        // 先用 $$$ 分割
         const vod_play_url_array = item.vod_play_url.split('$$$');
-        // 对每个分片做匹配，取匹配到最多的作为结果
         vod_play_url_array.forEach((url: string) => {
           const matches = url.match(m3u8Regex) || [];
           if (matches.length > episodes.length) {
@@ -68,7 +87,7 @@ export async function searchFromApi(
       }
 
       episodes = Array.from(new Set(episodes)).map((link: string) => {
-        link = link.substring(1); // 去掉开头的 $
+        link = link.substring(1);
         const parenIndex = link.indexOf('(');
         return parenIndex > 0 ? link.substring(0, parenIndex) : link;
       });
@@ -90,15 +109,10 @@ export async function searchFromApi(
       };
     });
 
-    const config = await getConfig();
-    const MAX_SEARCH_PAGES: number = config.SiteConfig.SearchDownstreamMaxPage;
-
-    // 获取总页数
+    const MAX_SEARCH_PAGES = 5;
     const pageCount = data.pagecount || 1;
-    // 确定需要获取的额外页数
     const pagesToFetch = Math.min(pageCount - 1, MAX_SEARCH_PAGES - 1);
 
-    // 如果有额外页数，获取更多页的结果
     if (pagesToFetch > 0) {
       const additionalPagePromises = [];
 
@@ -111,18 +125,10 @@ export async function searchFromApi(
 
         const pagePromise = (async () => {
           try {
-            const pageController = new AbortController();
-            const pageTimeoutId = setTimeout(
-              () => pageController.abort(),
-              8000
-            );
-
-            const pageResponse = await fetch(pageUrl, {
+            const pageResponse = await nativeFetch(pageUrl, {
               headers: API_CONFIG.search.headers,
-              signal: pageController.signal,
+              timeout: 8000,
             });
-
-            clearTimeout(pageTimeoutId);
 
             if (!pageResponse.ok) return [];
 
@@ -134,14 +140,13 @@ export async function searchFromApi(
             return pageData.list.map((item: ApiSearchItem) => {
               let episodes: string[] = [];
 
-              // 使用正则表达式从 vod_play_url 提取 m3u8 链接
               if (item.vod_play_url) {
                 const m3u8Regex = /\$(https?:\/\/[^"'\s]+?\.m3u8)/g;
                 episodes = item.vod_play_url.match(m3u8Regex) || [];
               }
 
               episodes = Array.from(new Set(episodes)).map((link: string) => {
-                link = link.substring(1); // 去掉开头的 $
+                link = link.substring(1);
                 const parenIndex = link.indexOf('(');
                 return parenIndex > 0 ? link.substring(0, parenIndex) : link;
               });
@@ -170,10 +175,8 @@ export async function searchFromApi(
         additionalPagePromises.push(pagePromise);
       }
 
-      // 等待所有额外页的结果
       const additionalResults = await Promise.all(additionalPagePromises);
 
-      // 合并所有页的结果
       additionalResults.forEach((pageResults) => {
         if (pageResults.length > 0) {
           results.push(...pageResults);
@@ -187,7 +190,6 @@ export async function searchFromApi(
   }
 }
 
-// 匹配 m3u8 链接的正则
 const M3U8_PATTERN = /(https?:\/\/[^"'\s]+?\.m3u8)/g;
 const M3U8_WITH_DOLLAR_PATTERN = /\$(https?:\/\/[^"'\s]+?\.m3u8)/g;
 
@@ -211,14 +213,11 @@ export async function getDetailFromApi(
   const detailUrl = `${apiSite.api}${API_CONFIG.detail.path}${id}`;
   const altDetailUrl = `${apiSite.api}?ac=detail&ids=${encodeURIComponent(id)}`;
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 10000);
-
   try {
     const fetchDetailJson = async (url: string): Promise<any> => {
-      const response = await fetch(url, {
+      const response = await nativeFetch(url, {
         headers: API_CONFIG.detail.headers,
-        signal: controller.signal,
+        timeout: 10000,
       });
 
       if (!response.ok) {
@@ -238,8 +237,6 @@ export async function getDetailFromApi(
       data = await fetchDetailJson(detailUrl);
     } catch {
       data = await fetchDetailJson(altDetailUrl);
-    } finally {
-      clearTimeout(timeoutId);
     }
 
     if (
@@ -287,7 +284,6 @@ export async function getDetailFromApi(
       douban_id: videoDetail.vod_douban_id,
     };
   } catch (error) {
-    clearTimeout(timeoutId);
     if (apiSite.detail) {
       try {
         return await handleSpecialSourceDetail(id, apiSite);
@@ -311,19 +307,14 @@ async function handleSpecialSourceDetail(
 ): Promise<SearchResult> {
   const detailUrl = `${apiSite.detail}/index.php/vod/detail/id/${id}.html`;
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 10000);
-
-  const response = await fetch(detailUrl, {
+  const response = await nativeFetch(detailUrl, {
     headers: {
       ...API_CONFIG.detail.headers,
       Accept:
         'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
     },
-    signal: controller.signal,
+    timeout: 10000,
   });
-
-  clearTimeout(timeoutId);
 
   if (!response.ok) {
     throw new Error(`详情页请求失败: ${response.status}`);
@@ -343,28 +334,23 @@ async function handleSpecialSourceDetail(
     matches = html.match(generalPattern) || [];
   }
 
-  // 去重并清理链接前缀
   matches = Array.from(new Set(matches)).map((link: string) => {
-    link = link.substring(1); // 去掉开头的 $
+    link = link.substring(1);
     const parenIndex = link.indexOf('(');
     return parenIndex > 0 ? link.substring(0, parenIndex) : link;
   });
 
-  // 提取标题
   const titleMatch = html.match(/<h1[^>]*>([^<]+)<\/h1>/);
   const titleText = titleMatch ? titleMatch[1].trim() : '';
 
-  // 提取描述
   const descMatch = html.match(
     /<div[^>]*class=["']sketch["'][^>]*>([\s\S]*?)<\/div>/
   );
   const descText = descMatch ? cleanHtmlTags(descMatch[1]) : '';
 
-  // 提取封面
   const coverMatch = html.match(/(https?:\/\/[^"'\s]+?\.jpg)/g);
   const coverUrl = coverMatch ? coverMatch[0].trim() : '';
 
-  // 提取年份
   const yearMatch = html.match(/>(\d{4})</);
   const yearText = yearMatch ? yearMatch[1] : 'unknown';
 
@@ -381,4 +367,69 @@ async function handleSpecialSourceDetail(
     type_name: '',
     douban_id: 0,
   };
+}
+
+/**
+ * 聚合搜索：从所有可用源并发搜索
+ */
+export async function downstreamSearch(
+  query: string
+): Promise<SearchResult[]> {
+  const apiSites = await getAvailableApiSites();
+  const results: SearchResult[] = [];
+
+  const siteResults = await Promise.all(
+    apiSites.map(async (site) => {
+      try {
+        return await searchFromApi(site, query);
+      } catch {
+        return [];
+      }
+    })
+  );
+
+  siteResults.forEach((r) => results.push(...r));
+  return results;
+}
+
+/**
+ * 获取视频详情
+ */
+export async function fetchVideoDetail({
+  source,
+  id,
+  fallbackTitle = '',
+}: {
+  source: string;
+  id: string;
+  fallbackTitle?: string;
+}): Promise<SearchResult> {
+  const apiSites = await getAvailableApiSites();
+  const apiSite = apiSites.find((site) => site.key === source);
+  if (!apiSite) {
+    throw new Error('无效的API来源');
+  }
+
+  if (fallbackTitle) {
+    try {
+      const searchData = await searchFromApi(apiSite, fallbackTitle.trim());
+      const exactMatch = searchData.find(
+        (item: SearchResult) =>
+          item.source.toString() === source.toString() &&
+          item.id.toString() === id.toString()
+      );
+      if (exactMatch) {
+        return exactMatch;
+      }
+    } catch (error) {
+      // do nothing
+    }
+  }
+
+  const detail = await getDetailFromApi(apiSite, id);
+  if (!detail) {
+    throw new Error('获取视频详情失败');
+  }
+
+  return detail;
 }

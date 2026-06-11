@@ -23,6 +23,7 @@ import {
   saveSkipConfig,
   subscribeToDataUpdates,
 } from '@/lib/db.client';
+import { fetchVideoDetail, downstreamSearch } from '@/lib/downstream';
 import { SearchResult } from '@/lib/types';
 import { getVideoResolutionFromM3u8, processImageUrl } from '@/lib/utils';
 
@@ -542,13 +543,7 @@ function PlayPageClient() {
           videoTitle ||
           ''
         ).trim();
-        const detailResponse = await fetch(
-          `/api/detail/?source=${encodeURIComponent(source)}&id=${encodeURIComponent(id)}${titleParam ? `&title=${encodeURIComponent(titleParam)}` : ''}`
-        );
-        if (!detailResponse.ok) {
-          throw new Error('获取视频详情失败');
-        }
-        const detailData = (await detailResponse.json()) as SearchResult;
+        const detailData = await fetchVideoDetail({ source, id, fallbackTitle: titleParam });
         setAvailableSources([detailData]);
         return [detailData];
       } catch (err) {
@@ -562,15 +557,7 @@ function PlayPageClient() {
       // 根据搜索词获取全部源信息
       try {
         const trimmedQuery = query.trim();
-        const response = await fetch(
-          `/api/search/?q=${encodeURIComponent(trimmedQuery)}`
-        );
-        if (!response.ok) {
-          throw new Error('搜索失败');
-        }
-        const data = await response.json();
-
-        const allResults = (data.results as SearchResult[]) || [];
+        const allResults = await downstreamSearch(trimmedQuery);
         const normalizedDoubanId = doubanId.trim();
         const isNumericQuery = /^\d+$/.test(trimmedQuery);
 
