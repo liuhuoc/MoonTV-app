@@ -50,22 +50,14 @@ jobs:
         env:
           CAPACITOR_SERVER_URL: ${{ github.event.inputs.server_url || secrets.CAPACITOR_SERVER_URL || '' }}
 
-      - name: Decode keystore
-        run: |
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > android/moontv-release-key.keystore
-
-      - name: Build Release APK
+      - name: Build Debug APK
         run: |
           cd android
-          ./gradlew assembleRelease
-        env:
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          ./gradlew assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: moontv-release-apk
-          path: android/app/build/outputs/apk/release/app-release.apk
+          name: moontv-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
