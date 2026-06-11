@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { CheckCircle, Heart, Link, PlayCircleIcon } from 'lucide-react';
+import { CheckCircle, Heart, Link, Play } from 'lucide-react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
@@ -276,70 +276,70 @@ export default function VideoCard({
 
   return (
     <div
-      className='group relative w-full rounded-lg bg-transparent cursor-pointer transition-all duration-300 ease-in-out hover:scale-[1.05] hover:z-[500]'
+      className="group relative w-full cursor-pointer card-glow"
       onClick={handleClick}
     >
       {/* 海报容器 */}
-      <div className='relative aspect-[2/3] overflow-hidden rounded-lg'>
+      <div className="relative aspect-[2/3] overflow-hidden rounded-xl shadow-sm transition-shadow duration-300 ease-out group-hover:shadow-xl">
         {/* 骨架屏 */}
-        {!isLoading && <ImagePlaceholder aspectRatio='aspect-[2/3]' />}
+        {!isLoading && <ImagePlaceholder aspectRatio="aspect-[2/3]" />}
         {/* 图片 */}
         <Image
           src={processImageUrl(actualPoster)}
           alt={actualTitle}
           fill
-          className='object-cover'
-          referrerPolicy='no-referrer'
+          className="object-cover transition-transform duration-500 ease-out group-hover:scale-105"
+          referrerPolicy="no-referrer"
           onLoadingComplete={() => setIsLoading(true)}
         />
 
-        {/* 悬浮遮罩 */}
-        <div className='absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 transition-opacity duration-300 ease-in-out group-hover:opacity-100' />
+        {/* 暗化 overlay */}
+        <div className="absolute inset-0 bg-black/0 transition-colors duration-300 ease-out group-hover:bg-black/30" />
 
         {/* 播放按钮 */}
         {config.showPlayButton && (
-          <div className='absolute inset-0 flex items-center justify-center opacity-0 transition-all duration-300 ease-in-out delay-75 group-hover:opacity-100 group-hover:scale-100'>
-            <PlayCircleIcon
-              size={50}
-              strokeWidth={0.8}
-              className='text-white fill-transparent transition-all duration-300 ease-out hover:fill-green-500 hover:scale-[1.1]'
-            />
+          <div className="absolute inset-0 flex items-center justify-center opacity-0 transition-opacity duration-300 ease-out group-hover:opacity-100">
+            <div className="flex items-center justify-center w-10 h-10 rounded-full bg-white/90 text-gray-900 shadow-lg backdrop-blur-sm transition-transform duration-300 ease-out group-hover:scale-100 scale-90">
+              <Play size={18} fill="currentColor" />
+            </div>
           </div>
         )}
 
-        {/* 操作按钮 */}
-        {(config.showHeart || config.showCheckCircle) && (
-          <div className='absolute bottom-3 right-3 flex gap-3 opacity-0 translate-y-2 transition-all duration-300 ease-in-out group-hover:opacity-100 group-hover:translate-y-0'>
-            {config.showCheckCircle && (
-              <CheckCircle
-                onClick={handleDeleteRecord}
-                size={20}
-                className='text-white transition-all duration-300 ease-out hover:stroke-green-500 hover:scale-[1.1]'
-              />
-            )}
-            {config.showHeart && (
+        {/* 收藏 / 删除按钮 */}
+        <div className="absolute bottom-2 right-2 flex items-center gap-1.5 opacity-0 translate-y-1 transition-all duration-300 ease-out group-hover:opacity-100 group-hover:translate-y-0">
+          {config.showCheckCircle && (
+            <button
+              onClick={handleDeleteRecord}
+              className="flex items-center justify-center w-7 h-7 rounded-full bg-black/50 text-white backdrop-blur-sm transition-colors duration-200 hover:bg-red-500/80"
+            >
+              <CheckCircle size={14} />
+            </button>
+          )}
+          {config.showHeart && (
+            <button
+              onClick={handleToggleFavorite}
+              className="flex items-center justify-center w-7 h-7 rounded-full bg-black/50 text-white backdrop-blur-sm transition-colors duration-200 hover:bg-red-500/80"
+            >
               <Heart
-                onClick={handleToggleFavorite}
-                size={20}
-                className={`transition-all duration-300 ease-out ${
-                  favorited
-                    ? 'fill-red-600 stroke-red-600'
-                    : 'fill-transparent stroke-white hover:stroke-red-400'
-                } hover:scale-[1.1]`}
+                size={14}
+                className={
+                  favorited ? 'fill-red-400 text-red-400' : 'fill-transparent'
+                }
               />
-            )}
-          </div>
-        )}
+            </button>
+          )}
+        </div>
 
-        {/* 徽章 */}
+        {/* 徽章：评分 */}
         {config.showRating && rate && (
-          <div className='absolute top-2 right-2 bg-pink-500 text-white text-xs font-bold w-7 h-7 rounded-full flex items-center justify-center shadow-md transition-all duration-300 ease-out group-hover:scale-110'>
+          <div className="absolute top-2 left-2 bg-pink-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-sm">
             {rate}
           </div>
         )}
 
+        {/* 徽章：集数 */}
         {actualEpisodes && actualEpisodes > 1 && (
-          <div className='absolute top-2 right-2 bg-green-500 text-white text-xs font-semibold px-2 py-1 rounded-md shadow-md transition-all duration-300 ease-out group-hover:scale-110'>
+          <div className="absolute top-2 left-2 bg-green-500 text-white text-[10px] font-semibold px-1.5 py-0.5 rounded-full shadow-sm">
             {currentEpisode
               ? `${currentEpisode}/${actualEpisodes}`
               : actualEpisodes}
@@ -350,13 +350,13 @@ export default function VideoCard({
         {config.showDoubanLink && actualDoubanId && (
           <a
             href={`https://movie.douban.com/subject/${actualDoubanId}`}
-            target='_blank'
-            rel='noopener noreferrer'
+            target="_blank"
+            rel="noopener noreferrer"
             onClick={(e) => e.stopPropagation()}
-            className='absolute top-2 left-2 opacity-0 -translate-x-2 transition-all duration-300 ease-in-out delay-100 group-hover:opacity-100 group-hover:translate-x-0'
+            className="absolute top-2 left-2 opacity-0 -translate-x-1 transition-all duration-300 ease-out group-hover:opacity-100 group-hover:translate-x-0"
           >
-            <div className='bg-green-500 text-white text-xs font-bold w-7 h-7 rounded-full flex items-center justify-center shadow-md hover:bg-green-600 hover:scale-[1.1] transition-all duration-300 ease-out'>
-              <Link size={16} />
+            <div className="flex items-center justify-center w-7 h-7 rounded-full bg-green-500 text-white text-[10px] font-bold shadow-sm hover:bg-green-600 transition-colors duration-200">
+              <Link size={14} />
             </div>
           </a>
         )}
@@ -364,32 +364,23 @@ export default function VideoCard({
 
       {/* 进度条 */}
       {config.showProgress && progress !== undefined && (
-        <div className='mt-1 h-1 w-full bg-gray-200 rounded-full overflow-hidden'>
+        <div className="mt-1.5 h-0.5 w-full bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
           <div
-            className='h-full bg-green-500 transition-all duration-500 ease-out'
+            className="h-full bg-gradient-to-r from-green-400 to-green-600 transition-all duration-500 ease-out"
             style={{ width: `${progress}%` }}
           />
         </div>
       )}
 
       {/* 标题与来源 */}
-      <div className='mt-2 text-center'>
-        <div className='relative'>
-          <span className='block text-sm font-semibold truncate text-gray-900 dark:text-gray-100 transition-colors duration-300 ease-in-out group-hover:text-green-600 dark:group-hover:text-green-400 peer'>
-            {actualTitle}
-          </span>
-          {/* 自定义 tooltip */}
-          <div className='absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-1 bg-gray-800 text-white text-xs rounded-md shadow-lg opacity-0 invisible peer-hover:opacity-100 peer-hover:visible transition-all duration-200 ease-out delay-100 whitespace-nowrap pointer-events-none'>
-            {actualTitle}
-            <div className='absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-800'></div>
-          </div>
-        </div>
+      <div className="mt-2 px-0.5">
+        <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate leading-snug">
+          {actualTitle}
+        </p>
         {config.showSourceName && source_name && (
-          <span className='block text-xs text-gray-500 dark:text-gray-400 mt-1'>
-            <span className='inline-block border rounded px-2 py-0.5 border-gray-500/60 dark:border-gray-400/60 transition-all duration-300 ease-in-out group-hover:border-green-500/60 group-hover:text-green-600 dark:group-hover:text-green-400'>
-              {source_name}
-            </span>
-          </span>
+          <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5 truncate leading-snug">
+            {source_name}
+          </p>
         )}
       </div>
     </div>

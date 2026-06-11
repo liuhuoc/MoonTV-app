@@ -4,216 +4,196 @@
 
 @layer utilities {
   .scrollbar-hide {
-    -ms-overflow-style: none; /* IE and Edge */
-    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none;
+    scrollbar-width: none;
   }
 
   .scrollbar-hide::-webkit-scrollbar {
-    display: none; /* Chrome, Safari and Opera */
+    display: none;
+  }
+
+  /* 玻璃拟态 */
+  .glass {
+    background: rgba(255, 255, 255, 0.06);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .glass-strong {
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(32px) saturate(200%);
+    -webkit-backdrop-filter: blur(32px) saturate(200%);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+  }
+
+  /* 文字渐变 */
+  .text-gradient {
+    background: linear-gradient(135deg, #e5e7eb 0%, #9ca3af 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* 卡片悬停光晕 */
+  .card-glow {
+    position: relative;
+    transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.4s ease;
+  }
+
+  .card-glow:hover {
+    transform: translateY(-4px) scale(1.02);
+    box-shadow: 0 20px 40px -12px rgba(0, 0, 0, 0.5);
+  }
+
+  /* 图片遮罩 */
+  .image-mask {
+    mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
+  }
+
+  /* 入场动画 */
+  .fade-in-up {
+    animation: fadeInUp 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+    opacity: 0;
+  }
+
+  .fade-in-up-delay-1 { animation-delay: 0.1s; }
+  .fade-in-up-delay-2 { animation-delay: 0.2s; }
+  .fade-in-up-delay-3 { animation-delay: 0.3s; }
+  .fade-in-up-delay-4 { animation-delay: 0.4s; }
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
-:root {
-  --foreground-rgb: 255, 255, 255;
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
 }
 
-html,
-body {
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* 骨架屏 shimmer */
+.shimmer {
+  background: linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.03) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+/* 全局基础 */
+html, body {
   height: 100%;
   overflow-x: hidden;
-  /* 阻止 iOS Safari 拉动回弹 */
   overscroll-behavior: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 body {
-  color: rgb(var(--foreground-rgb));
+  color: #e5e7eb;
+  background: #0a0a0f;
 }
 
+/* 暗色主题默认 */
+html.dark body,
+body {
+  background: #0a0a0f;
+}
+
+/* 浅色主题 */
 html:not(.dark) body {
-  background: linear-gradient(
-    180deg,
-    #e6f3fb 0%,
-    #eaf3f7 18%,
-    #f7f7f3 38%,
-    #e9ecef 60%,
-    #dbe3ea 80%,
-    #d3dde6 100%
-  );
-  background-attachment: fixed;
+  background: #f5f5f7;
+  color: #1a1a2e;
 }
 
-/* 自定义滚动条样式 */
+/* 自定义滚动条 - 极细 */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 4px;
+  height: 4px;
 }
 
 ::-webkit-scrollbar-track {
-  background: rgba(31, 41, 55, 0.1);
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(75, 85, 99, 0.3);
-  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(107, 114, 128, 0.5);
+  background: rgba(255, 255, 255, 0.2);
 }
 
-/* 视频卡片悬停效果 */
-.video-card-hover {
-  transition: transform 0.3s ease;
-}
-
-.video-card-hover:hover {
-  transform: scale(1.05);
-}
-
-/* 渐变遮罩 */
-.gradient-overlay {
-  background: linear-gradient(
-    to bottom,
-    rgba(0, 0, 0, 0) 0%,
-    rgba(0, 0, 0, 0.8) 100%
-  );
-}
-
-/* 隐藏移动端（<768px）垂直滚动条 */
+/* 隐藏移动端滚动条 */
 @media (max-width: 767px) {
-  html,
-  body {
-    -ms-overflow-style: none; /* IE & Edge */
-    scrollbar-width: none; /* Firefox */
+  html, body {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
   }
-
   html::-webkit-scrollbar,
   body::-webkit-scrollbar {
-    display: none; /* Chrome Safari */
+    display: none;
   }
 }
 
-/* 隐藏所有滚动条（兼容 WebKit、Firefox、IE/Edge） */
-* {
-  -ms-overflow-style: none; /* IE & Edge */
-  scrollbar-width: none; /* Firefox */
-}
-
-*::-webkit-scrollbar {
-  display: none; /* Chrome, Safari, Opera */
-}
-
-/* View Transitions API 动画 */
+/* View Transitions */
 @keyframes slide-from-top {
-  from {
-    clip-path: polygon(0 0, 100% 0, 100% 0, 0 0);
-  }
-  to {
-    clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
-  }
+  from { clip-path: polygon(0 0, 100% 0, 100% 0, 0 0); }
+  to { clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%); }
 }
 
-@keyframes slide-from-bottom {
-  from {
-    clip-path: polygon(0 100%, 100% 100%, 100% 100%, 0 100%);
-  }
-  to {
-    clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
-  }
-}
+::view-transition-old(root) { animation: none; }
+html.dark::view-transition-new(root) { animation: slide-from-top 0.6s cubic-bezier(0.4, 0, 0.2, 1); }
 
-::view-transition-old(root),
-::view-transition-new(root) {
-  animation-duration: 0.8s;
-  animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
-  animation-fill-mode: both;
-}
-
-/*
-  切换时，旧的视图不应该有动画，它应该在下面，等待被新的视图覆盖。
-  这可以防止在动画完成前，页面底部提前变色。
-*/
-::view-transition-old(root) {
-  animation: none;
-}
-
-/* 从浅色到深色：新内容（深色）从顶部滑入 */
-html.dark::view-transition-new(root) {
-  animation-name: slide-from-top;
-}
-
-/* 从深色到浅色：新内容（浅色）从底部滑入 */
-html:not(.dark)::view-transition-new(root) {
-  animation-name: slide-from-bottom;
-}
-
-/* 强制播放器内部的 video 元素高度为 100%，并保持内容完整显示 */
+/* 播放器 */
 div[data-media-provider] video {
   height: 100%;
   object-fit: contain;
 }
 
 .art-poster {
-  background-size: contain !important; /* 使图片完整展示 */
-  background-position: center center !important; /* 居中显示 */
-  background-repeat: no-repeat !important; /* 防止重复 */
-  background-color: #000 !important; /* 其余区域填充为黑色 */
+  background-size: contain !important;
+  background-position: center center !important;
+  background-repeat: no-repeat !important;
+  background-color: #000 !important;
 }
 
-/* 隐藏移动端竖屏时的 pip 按钮 */
+/* 移动端播放器 */
 @media (max-width: 768px) {
-  .art-control-pip {
-    display: none !important;
-  }
-
-  .art-control-volume {
-    display: none !important;
-  }
-}
-
-/* 移动端全屏样式优化 */
-@media (max-width: 768px) {
-  .art-fullscreen {
+  .art-control-pip, .art-control-volume { display: none !important; }
+  .art-fullscreen, .art-fullscreen-web {
     position: fixed !important;
-    top: 0 !important;
-    left: 0 !important;
+    inset: 0 !important;
     width: 100vw !important;
     height: 100vh !important;
     z-index: 9999 !important;
-  }
-
-  .art-fullscreen-web {
-    position: fixed !important;
-    top: 0 !important;
-    left: 0 !important;
-    width: 100vw !important;
-    height: 100vh !important;
-    z-index: 9999 !important;
+    background-color: #000 !important;
   }
 }
 
-/* 移动端状态栏安全区域处理 */
+/* 安全区 */
 @supports (padding-top: env(safe-area-inset-top)) {
   .mobile-header-safe {
     padding-top: max(env(safe-area-inset-top), 20px) !important;
   }
 }
 
-/* 确保全屏时隐藏状态栏 */
-.art-fullscreen,
-.art-fullscreen-web {
-  background-color: #000 !important;
-}
-
-/* 移动端横屏全屏优化 */
+/* 横屏 */
 @media (max-width: 768px) and (orientation: landscape) {
-  .art-fullscreen,
-  .art-fullscreen-web {
-    position: fixed !important;
-    top: 0 !important;
-    left: 0 !important;
-    width: 100vw !important;
-    height: 100vh !important;
+  .art-fullscreen, .art-fullscreen-web {
     z-index: 10000 !important;
   }
 }

@@ -2,6 +2,7 @@
 
 'use client';
 
+import { Film, Loader2, Tv } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { Suspense } from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -419,23 +420,28 @@ function DoubanPageClient() {
     return activePath;
   };
 
+  const TitleIcon = type === 'movie' ? Film : Tv;
+
   return (
     <PageLayout activePath={getActivePath()}>
       <div className='px-4 sm:px-10 py-4 sm:py-8 overflow-visible'>
         {/* 页面标题和选择器 */}
-        <div className='mb-6 sm:mb-8 space-y-4 sm:space-y-6'>
+        <div className='mb-8 sm:mb-10 space-y-6 sm:space-y-8'>
           {/* 页面标题 */}
-          <div>
-            <h1 className='text-2xl sm:text-3xl font-bold text-gray-800 mb-1 sm:mb-2 dark:text-gray-200'>
-              {getPageTitle()}
-            </h1>
-            <p className='text-sm sm:text-base text-gray-600 dark:text-gray-400'>
-              来自豆瓣的精选内容
-            </p>
+          <div className='flex items-center gap-3'>
+            <TitleIcon className='w-8 h-8 text-green-400' />
+            <div>
+              <h1 className='text-3xl sm:text-4xl font-bold text-gradient'>
+                {getPageTitle()}
+              </h1>
+              <p className='text-sm sm:text-base text-gray-500 dark:text-gray-400 mt-1'>
+                来自豆瓣的精选内容
+              </p>
+            </div>
           </div>
 
           {/* 选择器组件 */}
-          <div className='bg-white/60 dark:bg-gray-800/40 rounded-2xl p-4 sm:p-6 border border-gray-200/30 dark:border-gray-700/30 backdrop-blur-sm'>
+          <div className='glass rounded-3xl p-5 sm:p-8'>
             <DoubanSelector
               type={type as 'movie' | 'tv' | 'show'}
               primarySelection={primarySelection}
@@ -453,7 +459,7 @@ function DoubanPageClient() {
         {/* 内容展示区域 */}
         <div className='max-w-[95%] mx-auto mt-8 overflow-visible'>
           {/* 内容网格 */}
-          <div className='grid grid-cols-3 gap-x-2 gap-y-12 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fit,minmax(160px,1fr))] sm:gap-x-8 sm:gap-y-20'>
+          <div className='grid grid-cols-3 gap-x-3 gap-y-14 sm:gap-y-20 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fit,minmax(180px,1fr))] sm:gap-x-10'>
             {loading || !selectorsReady
               ? // 显示骨架屏
                 skeletonData.map((index) => <DoubanCardSkeleton key={index} />)
@@ -483,12 +489,12 @@ function DoubanPageClient() {
                   ).current = el;
                 }
               }}
-              className='flex justify-center mt-12 py-8'
+              className='flex justify-center mt-16 py-8'
             >
               {isLoadingMore && (
-                <div className='flex items-center gap-2'>
-                  <div className='animate-spin rounded-full h-6 w-6 border-b-2 border-green-500'></div>
-                  <span className='text-gray-600'>加载中...</span>
+                <div className='flex items-center gap-3'>
+                  <Loader2 className='w-5 h-5 text-green-400 animate-spin' />
+                  <span className='text-sm text-gray-500 dark:text-gray-400'>加载中...</span>
                 </div>
               )}
             </div>
@@ -496,13 +502,17 @@ function DoubanPageClient() {
 
           {/* 没有更多数据提示 */}
           {!hasMore && doubanData.length > 0 && (
-            <div className='text-center text-gray-500 py-8'>已加载全部内容</div>
+            <div className='text-center text-gray-500 dark:text-gray-500 py-8 text-sm'>
+              已加载全部内容
+            </div>
           )}
 
           {/* 空状态 */}
           {!loading && doubanData.length === 0 && (
-            <div className='text-center text-gray-500 py-8'>
-              暂无相关内容，试试更换分类、地区、年份或排序
+            <div className='flex flex-col items-center justify-center py-16 text-gray-500 dark:text-gray-400'>
+              <Film className='w-12 h-12 mb-4 opacity-30' />
+              <p className='text-lg'>暂无相关内容</p>
+              <p className='text-sm mt-1 opacity-60'>试试更换分类、地区、年份或排序</p>
             </div>
           )}
         </div>
