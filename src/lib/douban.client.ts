@@ -48,6 +48,14 @@ interface DoubanSubjectCollectionApiResponse {
 }
 
 /**
+ * 检查是否应该使用客户端获取豆瓣数据
+ */
+export function shouldUseDoubanClient(): boolean {
+  // 纯客户端模式下始终使用客户端获取
+  return true;
+}
+
+/**
  * 客户端豆瓣分类数据获取函数（使用 Capacitor HTTP 绕过 CORS）
  */
 export async function getDoubanCategories(
@@ -56,11 +64,19 @@ export async function getDoubanCategories(
   const { kind, category, type, year, sort, pageLimit = 20, pageStart = 0 } = params;
 
   if (!['tv', 'movie'].includes(kind)) {
-    throw new Error('kind 参数必须是 tv 或 movie');
+    return {
+      code: 400,
+      message: 'kind 参数必须是 tv 或 movie',
+      list: [],
+    };
   }
 
   if (!category || !type) {
-    throw new Error('category 和 type 参数不能为空');
+    return {
+      code: 400,
+      message: 'category 和 type 参数不能为空',
+      list: [],
+    };
   }
 
   const movieGenresFromSelector = new Set([
@@ -128,11 +144,7 @@ export async function getDoubanCategories(
     });
 
     if (!response.ok) {
-      return {
-        code: response.status,
-        message: `豆瓣API返回错误: ${response.status}`,
-        list: [],
-      };
+      throw new Error(`HTTP error! Status: ${response.status}`);
     }
 
     let list: DoubanItem[];
@@ -186,11 +198,6 @@ export async function getDoubanCategories(
       list,
     };
   } catch (error) {
-    console.error('豆瓣API请求失败:', error);
-    return {
-      code: 500,
-      message: `请求失败: ${(error as Error).message}`,
-      list: [],
-    };
+    throw new Error(`获取豆瓣分类数据失败: ${(error as Error).message}`);
   }
 }

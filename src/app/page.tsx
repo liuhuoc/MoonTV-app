@@ -46,31 +46,27 @@ function HomeClient() {
       try {
         setLoading(true);
 
-        // 并行获取热门电影、热门剧集和热门综艺（使用 allSettled 避免单个失败拖垮全部）
-        const results = await Promise.allSettled([
-          getDoubanCategories({ kind: 'movie', category: '热门', type: '全部' }),
+        // 并行获取热门电影、热门剧集和热门综艺
+        const [moviesData, tvShowsData, varietyShowsData] = await Promise.all([
+          getDoubanCategories({
+            kind: 'movie',
+            category: '热门',
+            type: '全部',
+          }),
           getDoubanCategories({ kind: 'tv', category: 'tv', type: 'tv' }),
           getDoubanCategories({ kind: 'tv', category: 'show', type: 'show' }),
         ]);
 
-        const [moviesResult, tvResult, varietyResult] = results;
-
-        if (moviesResult.status === 'fulfilled' && moviesResult.value.code === 200) {
-          setHotMovies(moviesResult.value.list);
-        } else {
-          console.warn('热门电影加载失败:', moviesResult.status === 'rejected' ? moviesResult.reason : '空数据');
+        if (moviesData.code === 200) {
+          setHotMovies(moviesData.list);
         }
 
-        if (tvResult.status === 'fulfilled' && tvResult.value.code === 200) {
-          setHotTvShows(tvResult.value.list);
-        } else {
-          console.warn('热门剧集加载失败:', tvResult.status === 'rejected' ? tvResult.reason : '空数据');
+        if (tvShowsData.code === 200) {
+          setHotTvShows(tvShowsData.list);
         }
 
-        if (varietyResult.status === 'fulfilled' && varietyResult.value.code === 200) {
-          setHotVarietyShows(varietyResult.value.list);
-        } else {
-          console.warn('热门综艺加载失败:', varietyResult.status === 'rejected' ? varietyResult.reason : '空数据');
+        if (varietyShowsData.code === 200) {
+          setHotVarietyShows(varietyShowsData.list);
         }
       } catch (error) {
         console.error('获取豆瓣数据失败:', error);

@@ -14,6 +14,12 @@ importers:
       '@capacitor/core':
         specifier: ^7.4.2
         version: 7.4.2
+      '@capacitor/filesystem':
+        specifier: ^8.1.2
+        version: 8.1.2(@capacitor/core@7.4.2)
+      '@capacitor/http':
+        specifier: ^0.0.2
+        version: 0.0.2
       '@capacitor/screen-orientation':
         specifier: ^7.0.1
         version: 7.0.1(@capacitor/core@7.4.2)
@@ -840,6 +846,18 @@ packages:
   '@capacitor/core@7.4.2':
     resolution: {integrity: sha512-akCf9A1FUR8AWTtmgGjHEq6LmGsjA2U7igaJ9PxiCBfyxKqlDbuGHrlNdpvHEjV5tUPH3KYtkze6gtFcNKPU9A==}
 
+  '@capacitor/core@8.4.0':
+    resolution: {integrity: sha512-LrS1xPIrqLtJABBIPDGXxxKmI9OyesrzWw8DiHbxhSC9JoiLUleUAJlX1a0LWIVLRbuY4Szgf9huFeRqYH2SAQ==}
+
+  '@capacitor/filesystem@8.1.2':
+    resolution: {integrity: sha512-doaaMfGoFR2hWU6aV6u83I+5ZsGyJVq+Gz4r9lMpJzUKMm1eMu0hLnFdV1aXZlU9FlK/RndFrVD8oRZfNOqWgQ==}
+    peerDependencies:
+      '@capacitor/core': '>=8.0.0'
+
+  '@capacitor/http@0.0.2':
+    resolution: {integrity: sha512-3UPqYOmVkAQjCWWowSDGPnBkXY7znbPE7lNs8nhwTmE2E5fXTvjHM8PV15zOyn+nenY7zEu9Air49fGjrX+Tjg==}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
+
   '@capacitor/screen-orientation@7.0.1':
     resolution: {integrity: sha512-6s2CLPAy7xFCzAXtj///xR1/BqqsX0NBt1BkhffPAh6jOs3n3CZsbh+YnPEptyeBBUtpsWWOE9rrvgtvy6iKJg==}
     peerDependencies:
@@ -849,6 +867,9 @@ packages:
     resolution: {integrity: sha512-fYYkkdzCbQV+MjZVnaQTFl5I4bddnFW8ZrPVxDjNoGVPTUG7H58Ij1+NcuNxHLXjJvZOoZeYJ3w3I16Wb2zssw==}
     peerDependencies:
       '@capacitor/core': '>=7.0.0'
+
+  '@capacitor/synapse@1.0.4':
+    resolution: {integrity: sha512-/C1FUo8/OkKuAT4nCIu/34ny9siNHr9qtFezu4kxm6GY1wNFxrCFWjfYx5C1tUhVGz3fxBABegupkpjXvjCHrw==}
 
   '@cloudflare/kv-asset-handler@0.4.0':
     resolution: {integrity: sha512-+tv3z+SPp+gqTIcImN9o0hqE9xyfQjI1XD9pL6NuKjua9B1y7mNYv0S9cP+QEbA4ppVgGZEmKOvHX5G5Ei1CVA==}
@@ -7423,6 +7444,19 @@ snapshots:
     dependencies:
       tslib: 2.8.1
 
+  '@capacitor/core@8.4.0':
+    dependencies:
+      tslib: 2.8.1
+
+  '@capacitor/filesystem@8.1.2(@capacitor/core@7.4.2)':
+    dependencies:
+      '@capacitor/core': 7.4.2
+      '@capacitor/synapse': 1.0.4
+
+  '@capacitor/http@0.0.2':
+    dependencies:
+      '@capacitor/core': 8.4.0
+
   '@capacitor/screen-orientation@7.0.1(@capacitor/core@7.4.2)':
     dependencies:
       '@capacitor/core': 7.4.2
@@ -7430,6 +7464,8 @@ snapshots:
   '@capacitor/status-bar@7.0.2(@capacitor/core@7.4.2)':
     dependencies:
       '@capacitor/core': 7.4.2
+
+  '@capacitor/synapse@1.0.4': {}
 
   '@cloudflare/kv-asset-handler@0.4.0':
     dependencies:
