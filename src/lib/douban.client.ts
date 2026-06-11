@@ -17,14 +17,14 @@ function isCapacitor(): boolean {
 }
 
 /**
- * 获取请求 URL：Capacitor 环境直连豆瓣，浏览器环境通过 Next.js 代理
+ * 获取请求 URL：Capacitor 环境直连豆瓣，浏览器环境通过 CORS 代理
  */
 function buildDoubanUrl(apiPath: string): string {
   if (isCapacitor()) {
     return apiPath;
   }
-  // 浏览器环境走代理，绕过 CORS
-  return `/api/douban?url=${encodeURIComponent(apiPath)}`;
+  // 浏览器环境走 CORS 代理，绕过跨域限制
+  return `https://corsproxy.io/?${encodeURIComponent(apiPath)}`;
 }
 
 interface DoubanCategoriesParams {
