@@ -13,15 +13,10 @@ import android.webkit.CookieManager;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
-import android.webkit.WebViewClient;
 import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.Bridge;
 import com.capacitorjs.plugins.screenorientation.ScreenOrientationPlugin;
 import com.capacitorjs.plugins.statusbar.StatusBarPlugin;
-import java.io.InputStream;
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
-import java.io.IOException;
 
 public class MainActivity extends BridgeActivity {
 
@@ -38,20 +33,20 @@ public class MainActivity extends BridgeActivity {
             }
         }
     };
-    
+
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        
-        // 注册Capacitor插件
+
+        // 注册 Capacitor 插件
         registerPlugin(ScreenOrientationPlugin.class);
         registerPlugin(StatusBarPlugin.class);
-        
-        // 设置自定义WebViewClient来注入桥接脚本
-        setupWebView();
+
+        // 配置 WebView（本地模式）
+        configureWebView();
     }
-    
-    private void setupWebView() {
+
+    private void configureWebView() {
         Bridge bridge = getBridge();
         if (bridge != null) {
             WebView webView = bridge.getWebView();
@@ -73,19 +68,6 @@ public class MainActivity extends BridgeActivity {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                     settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
                 }
-
-                webView.setWebViewClient(new WebViewClient() {
-                    @Override
-                    public void onPageFinished(WebView view, String url) {
-                        super.onPageFinished(view, url);
-                        
-                        // 注入Capacitor桥接脚本
-                        String bridgeScript = loadBridgeScript();
-                        if (bridgeScript != null && !bridgeScript.isEmpty()) {
-                            view.evaluateJavascript(bridgeScript, null);
-                        }
-                    }
-                });
 
                 webView.setWebChromeClient(new WebChromeClient() {
                     @Override
@@ -165,24 +147,7 @@ public class MainActivity extends BridgeActivity {
             fullscreenCallback = null;
         }
     }
-    
-    private String loadBridgeScript() {
-        try {
-            InputStream inputStream = getAssets().open("public/capacitor-bridge.js");
-            BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream));
-            StringBuilder stringBuilder = new StringBuilder();
-            String line;
-            while ((line = reader.readLine()) != null) {
-                stringBuilder.append(line).append("\n");
-            }
-            reader.close();
-            return stringBuilder.toString();
-        } catch (IOException e) {
-            e.printStackTrace();
-            return null;
-        }
-    }
-    
+
     @Override
     public void onBackPressed() {
         if (fullscreenView != null) {
