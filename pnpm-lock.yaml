@@ -14,9 +14,6 @@ importers:
       '@capacitor/core':
         specifier: ^7.4.2
         version: 7.4.2
-      '@capacitor/http':
-        specifier: ^0.0.2
-        version: 0.0.2
       '@capacitor/screen-orientation':
         specifier: ^7.0.1
         version: 7.0.1(@capacitor/core@7.4.2)
@@ -842,13 +839,6 @@ packages:
 
   '@capacitor/core@7.4.2':
     resolution: {integrity: sha512-akCf9A1FUR8AWTtmgGjHEq6LmGsjA2U7igaJ9PxiCBfyxKqlDbuGHrlNdpvHEjV5tUPH3KYtkze6gtFcNKPU9A==}
-
-  '@capacitor/core@8.4.0':
-    resolution: {integrity: sha512-LrS1xPIrqLtJABBIPDGXxxKmI9OyesrzWw8DiHbxhSC9JoiLUleUAJlX1a0LWIVLRbuY4Szgf9huFeRqYH2SAQ==}
-
-  '@capacitor/http@0.0.2':
-    resolution: {integrity: sha512-3UPqYOmVkAQjCWWowSDGPnBkXY7znbPE7lNs8nhwTmE2E5fXTvjHM8PV15zOyn+nenY7zEu9Air49fGjrX+Tjg==}
-    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
 
   '@capacitor/screen-orientation@7.0.1':
     resolution: {integrity: sha512-6s2CLPAy7xFCzAXtj///xR1/BqqsX0NBt1BkhffPAh6jOs3n3CZsbh+YnPEptyeBBUtpsWWOE9rrvgtvy6iKJg==}
@@ -7432,14 +7422,6 @@ snapshots:
   '@capacitor/core@7.4.2':
     dependencies:
       tslib: 2.8.1
-
-  '@capacitor/core@8.4.0':
-    dependencies:
-      tslib: 2.8.1
-
-  '@capacitor/http@0.0.2':
-    dependencies:
-      '@capacitor/core': 8.4.0
 
   '@capacitor/screen-orientation@7.0.1(@capacitor/core@7.4.2)':
     dependencies:
