@@ -1,6 +1,32 @@
 import { DoubanItem, DoubanResult } from './types';
 import { nativeFetch } from './capacitor-http';
 
+/**
+ * 检测是否在 Capacitor 原生环境中
+ */
+let _isCapacitor: boolean | null = null;
+function isCapacitor(): boolean {
+  if (_isCapacitor !== null) return _isCapacitor;
+  try {
+    _isCapacitor = typeof window !== 'undefined' && !!(window as any).Capacitor?.isNativePlatform?.();
+  } catch {
+    _isCapacitor = false;
+  }
+  if (_isCapacitor === null) _isCapacitor = false;
+  return _isCapacitor;
+}
+
+/**
+ * 获取请求 URL：Capacitor 环境直连豆瓣，浏览器环境通过 Next.js 代理
+ */
+function buildDoubanUrl(apiPath: string): string {
+  if (isCapacitor()) {
+    return apiPath;
+  }
+  // 浏览器环境走代理，绕过 CORS
+  return `/api/douban?url=${encodeURIComponent(apiPath)}`;
+}
+
 interface DoubanCategoriesParams {
   kind: 'tv' | 'movie';
   category: string;
@@ -133,7 +159,7 @@ export async function getDoubanCategories(
       : `https://m.douban.com/rexxar/api/v2/subject/recent_hot/${kind}?start=${pageStart}&limit=${pageLimit}&category=${category}&type=${type}`;
 
   try {
-    const response = await nativeFetch(target, {
+    const response = await nativeFetch(buildDoubanUrl(target), {
       headers: {
         'User-Agent':
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
