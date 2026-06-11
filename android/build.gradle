@@ -34,12 +34,6 @@ subprojects {
                 }
             }
         }
-        // 统一 Kotlin JVM target 为 Java 17，避免与 Java 编译目标冲突
-        project.tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
-            kotlinOptions {
-                jvmTarget = JavaVersion.VERSION_17.toString()
-            }
-        }
     }
 }
 
