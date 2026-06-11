@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [main, master]
   workflow_dispatch:
+    inputs:
+      server_url:
+        description: '后端服务器地址（如 https://myserver.com），留空则仅打包前端UI'
+        required: false
+        type: string
 
 jobs:
   build:
@@ -42,6 +47,8 @@ jobs:
 
       - name: Capacitor sync
         run: npx cap sync android
+        env:
+          CAPACITOR_SERVER_URL: ${{ github.event.inputs.server_url || secrets.CAPACITOR_SERVER_URL || '' }}
 
       - name: Decode keystore
         run: |
