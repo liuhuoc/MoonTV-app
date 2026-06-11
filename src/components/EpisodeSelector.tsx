@@ -45,6 +45,12 @@ interface EpisodeSelectorProps {
   currentEpisodeUrl?: string;
   /** 当前集数标签 */
   currentEpisodeLabel?: string;
+  /** 下载模式：true 时点击集数触发下载而非播放 */
+  downloadMode?: boolean;
+  /** 下载模式下的回调，传递集数 URL 和标签 */
+  onDownloadEpisode?: (episodeUrl: string, label: string) => void;
+  /** 所有集数的 URL 列表（用于下载模式获取 URL） */
+  episodes?: string[];
 }
 
 /**
@@ -63,6 +69,9 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
   sourceSearchLoading = false,
   sourceSearchError = null,
   precomputedVideoInfo,
+  downloadMode = false,
+  onDownloadEpisode,
+  episodes,
 }) => {
   const router = useRouter();
   const pageCount = Math.ceil(totalEpisodes / episodesPerPage);
@@ -282,9 +291,20 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
 
   const handleEpisodeClick = useCallback(
     (episodeNumber: number) => {
+      if (downloadMode && onDownloadEpisode && episodes) {
+        const epIndex = episodeNumber;
+        if (epIndex >= 0 && epIndex < episodes.length) {
+          const url = episodes[epIndex];
+          const label = episodes.length > 1
+            ? `第${epIndex + 1}集`
+            : '完整版';
+          onDownloadEpisode(url, label);
+        }
+        return;
+      }
       onChange?.(episodeNumber);
     },
-    [onChange]
+    [onChange, downloadMode, onDownloadEpisode, episodes]
   );
 
   const handleSourceClick = useCallback(

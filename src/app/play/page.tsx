@@ -187,6 +187,9 @@ function PlayPageClient() {
     'initing' | 'sourceChanging'
   >('initing');
 
+  // 下载选集弹窗
+  const [showDownloadSelector, setShowDownloadSelector] = useState(false);
+
   // 播放进度保存相关
   const saveIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const lastSaveTimeRef = useRef<number>(0);
@@ -1172,11 +1175,14 @@ function PlayPageClient() {
   // 下载当前剧集
   const handleDownloadEpisode = async () => {
     const d = detailRef.current;
-    if (!d || !d.episodes || currentEpisodeIndex >= d.episodes.length) return;
-    const url = d.episodes[currentEpisodeIndex];
-    const label = d.episodes.length > 1
-      ? `第${currentEpisodeIndex + 1}集`
-      : '完整版';
+    if (!d || !d.episodes || d.episodes.length === 0) return;
+    setShowDownloadSelector(true);
+  };
+
+  // 确认下载指定剧集
+  const handleConfirmDownload = (url: string, label: string) => {
+    const d = detailRef.current;
+    if (!d) return;
     const task = addDownloadTask({
       title: videoTitleRef.current || d.title || '未知',
       episodeLabel: label,
@@ -1184,6 +1190,7 @@ function PlayPageClient() {
       url,
     });
     startDownload(task.id);
+    setShowDownloadSelector(false);
   };
 
   useEffect(() => {
@@ -2185,6 +2192,65 @@ function PlayPageClient() {
           </div>
         </div>
       </div>
+
+      {/* 下载选集弹窗 */}
+      {showDownloadSelector && detail && detail.episodes && detail.episodes.length > 0 && (
+        <div className='fixed inset-0 z-[1000] flex items-center justify-center'>
+          {/* 半透明背景遮罩 */}
+          <div
+            className='absolute inset-0 bg-black/60 backdrop-blur-sm'
+            onClick={() => setShowDownloadSelector(false)}
+          />
+          {/* 弹窗内容 */}
+          <div className='relative z-10 w-full max-w-md mx-4 max-h-[80vh] bg-white dark:bg-gray-900 rounded-2xl shadow-2xl overflow-hidden'>
+            {/* 标题栏 */}
+            <div className='flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700'>
+              <h2 className='text-lg font-semibold text-gray-900 dark:text-gray-100'>
+                选择要下载的剧集
+              </h2>
+              <button
+                onClick={() => setShowDownloadSelector(false)}
+                className='p-1.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400 transition-colors'
+              >
+                <svg className='w-5 h-5' fill='none' stroke='currentColor' viewBox='0 0 24 24'>
+                  <path strokeLinecap='round' strokeLinejoin='round' strokeWidth='2' d='M6 18L18 6M6 6l12 12' />
+                </svg>
+              </button>
+            </div>
+            {/* 剧集列表 */}
+            <div className='overflow-y-auto max-h-[60vh] p-4'>
+              <div className='grid grid-cols-5 sm:grid-cols-6 gap-2'>
+                {detail.episodes.map((url, index) => {
+                  const episodeNum = index + 1;
+                  const label = detail.episodes.length > 1
+                    ? `第${episodeNum}集`
+                    : '完整版';
+                  const isCurrent = index === currentEpisodeIndex;
+                  return (
+                    <button
+                      key={episodeNum}
+                      onClick={() => handleConfirmDownload(url, label)}
+                      className={`h-10 flex items-center justify-center text-sm font-medium rounded-lg transition-all duration-200
+                        ${isCurrent
+                          ? 'bg-green-500 text-white shadow-md'
+                          : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-blue-100 dark:hover:bg-blue-900/30 hover:text-blue-600 dark:hover:text-blue-400'
+                        }`}
+                    >
+                      {episodeNum}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            {/* 底部提示 */}
+            <div className='px-6 py-3 border-t border-gray-200 dark:border-gray-700'>
+              <p className='text-xs text-gray-500 dark:text-gray-400 text-center'>
+                共 {detail.episodes.length} 集 · 点击剧集即可开始下载
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </PageLayout>
   );
 }

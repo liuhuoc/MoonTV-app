@@ -2,29 +2,46 @@ import { DoubanItem, DoubanResult } from './types';
 import { nativeFetch } from './capacitor-http';
 
 /**
- * 检测是否在 Capacitor 原生环境中
+ * 在 CapacitorAPK 中 CapacitorHttpNative 可绕过 CORS 直连豆瓣
+ * 浏览器环境检测 CapacitorHttp 是否可用（同 capacitor-http.ts 逻辑）
  */
-let _isCapacitor: boolean | null = null;
-function isCapacitor(): boolean {
-  if (_isCapacitor !== null) return _isCapacitor;
+function isCapacitorAvailable(): boolean {
+  if (typeof window === 'undefined') return false;
   try {
-    _isCapacitor = typeof window !== 'undefined' && !!(window as any).Capacitor?.isNativePlatform?.();
+    const { CapacitorHttp } = (window as any).CapacitorWebVars || {};
+    return !!(CapacitorHttp && typeof CapacitorHttp.request === 'function');
   } catch {
-    _isCapacitor = false;
+    return false;
   }
-  if (_isCapacitor === null) _isCapacitor = false;
-  return _isCapacitor;
 }
 
 /**
- * 获取请求 URL：Capacitor 环境直连豆瓣，浏览器环境通过 CORS 代理
+ * CORS 代理列表（按优先级）
  */
-function buildDoubanUrl(apiPath: string): string {
-  if (isCapacitor()) {
-    return apiPath;
+const CORS_PROXIES = [
+  (url: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+  (url: string) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+  (url: string) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+];
+
+/**
+ * 尝试通过多个 CORS 代理获取数据，任一成功即返回
+ */
+async function fetchWithCorsProxy(apiPath: string): Promise<Response> {
+  for (const proxyUrl of CORS_PROXIES) {
+    try {
+      const res = await fetch(proxyUrl(apiPath), {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (res.ok) return res;
+    } catch {
+      continue;
+    }
   }
-  // 浏览器环境走 CORS 代理，绕过跨域限制
-  return `https://corsproxy.io/?${encodeURIComponent(apiPath)}`;
+  throw new Error('所有 CORS 代理均不可用');
 }
 
 interface DoubanCategoriesParams {
@@ -159,15 +176,19 @@ export async function getDoubanCategories(
       : `https://m.douban.com/rexxar/api/v2/subject/recent_hot/${kind}?start=${pageStart}&limit=${pageLimit}&category=${category}&type=${type}`;
 
   try {
-    const response = await nativeFetch(buildDoubanUrl(target), {
-      headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-        Referer: isMovieTagsFilter ? 'https://movie.douban.com/explore' : 'https://movie.douban.com/',
-        Accept: 'application/json, text/plain, */*',
-      },
-      timeout: 10000,
-    });
+    // Capacitor 原生环境：通过 CapacitorHttp 直连（绕过 CORS）
+    // 浏览器环境：尝试多个 CORS 代理
+    const response = isCapacitorAvailable()
+      ? await nativeFetch(target, {
+          headers: {
+            'User-Agent':
+              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+            Referer: isMovieTagsFilter ? 'https://movie.douban.com/explore' : 'https://movie.douban.com/',
+            Accept: 'application/json, text/plain, */*',
+          },
+          timeout: 10000,
+        })
+      : await fetchWithCorsProxy(target);
 
     if (!response.ok) {
       throw new Error(`HTTP error! Status: ${response.status}`);
