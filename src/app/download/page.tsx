@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowDown, Pause, Play, X } from 'lucide-react';
+import { ArrowDown, Pause, Play, RotateCcw, X } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 
 import PageLayout from '@/components/PageLayout';
@@ -9,6 +9,9 @@ import {
   deleteDownloadTask,
   formatBytes,
   getDownloadTasks,
+  pauseDownload,
+  resumeDownload,
+  retryDownload,
   startDownload,
   subscribeToDownloadUpdates,
   type DownloadTask,
@@ -25,12 +28,20 @@ function DownloadPageClient() {
     return unsubscribe;
   }, []);
 
-  const handleStart = useCallback(async (taskId: string) => {
-    await startDownload(taskId);
-  }, []);
-
   const handleDelete = useCallback(async (taskId: string) => {
     await deleteDownloadTask(taskId);
+  }, []);
+
+  const handlePause = useCallback((taskId: string) => {
+    pauseDownload(taskId);
+  }, []);
+
+  const handleResume = useCallback((taskId: string) => {
+    resumeDownload(taskId);
+  }, []);
+
+  const handleRetry = useCallback((taskId: string) => {
+    retryDownload(taskId);
   }, []);
 
   return (
@@ -65,15 +76,19 @@ function DownloadPageClient() {
                     {/* 操作按钮 */}
                     {(task.status === 'pending' || task.status === 'paused' || task.status === 'failed') && (
                       <button
-                        onClick={() => handleStart(task.id)}
+                        onClick={() => {
+                          if (task.status === 'failed') handleRetry(task.id);
+                          else handleResume(task.id);
+                        }}
                         className='p-2 rounded-full hover:bg-green-500/10 text-green-500 transition-colors'
-                        title='开始下载'
+                        title={task.status === 'failed' ? '重试' : '开始下载'}
                       >
-                        <Play size={18} />
+                        {task.status === 'failed' ? <RotateCcw size={18} /> : <Play size={18} />}
                       </button>
                     )}
                     {task.status === 'downloading' && (
                       <button
+                        onClick={() => handlePause(task.id)}
                         className='p-2 rounded-full hover:bg-yellow-500/10 text-yellow-500 transition-colors'
                         title='暂停'
                       >
@@ -91,7 +106,7 @@ function DownloadPageClient() {
                 </div>
 
                 {/* 进度条 */}
-                {task.status === 'downloading' && (
+                {(task.status === 'downloading' || task.status === 'paused') && (
                   <div className='space-y-1.5'>
                     <div className='w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 overflow-hidden'>
                       <div

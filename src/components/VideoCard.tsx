@@ -58,6 +58,7 @@ export default function VideoCard({
   const router = useRouter();
   const [favorited, setFavorited] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [hasError, setHasError] = useState(false);
 
   const isAggregate = from === 'search' && !!items?.length;
 
@@ -284,14 +285,29 @@ export default function VideoCard({
         {/* 骨架屏 */}
         {!isLoading && <ImagePlaceholder aspectRatio="aspect-[2/3]" />}
         {/* 图片 */}
-        <Image
-          src={processImageUrl(actualPoster)}
-          alt={actualTitle}
-          fill
-          className="object-cover transition-transform duration-500 ease-out group-hover:scale-105"
-          referrerPolicy="no-referrer"
-          onLoadingComplete={() => setIsLoading(true)}
-        />
+        {!hasError ? (
+          <Image
+            src={processImageUrl(actualPoster)}
+            alt={actualTitle}
+            fill
+            className="object-cover transition-transform duration-500 ease-out group-hover:scale-105"
+            referrerPolicy="no-referrer"
+            onLoadingComplete={() => setIsLoading(true)}
+            onError={() => {
+              setHasError(true);
+              setIsLoading(true);
+            }}
+          />
+        ) : (
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-100 dark:bg-gray-800">
+            <svg className="w-10 h-10 text-gray-400 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15.182 15.182a4.5 4.5 0 01-6.364 0M21 12a9 9 0 11-18 0 9 9 0 0118 0zM9.75 9.75c0 .414-.168.75-.375.75S9 10.164 9 9.75 9.168 9 9.375 9s.375.336.375.75zm-.375 0h.008v.015h-.008V9.75zm5.625 0c0 .414-.168.75-.375.75s-.375-.336-.375-.75.168-.75.375-.75.375.336.375.75zm-.375 0h.008v.015h-.008V9.75z" />
+            </svg>
+            <span className="text-xs text-gray-500 dark:text-gray-400 px-2 text-center truncate max-w-full">
+              {actualTitle?.slice(0, 6)}
+            </span>
+          </div>
+        )}
 
         {/* 暗化 overlay */}
         <div className="absolute inset-0 bg-black/0 transition-colors duration-300 ease-out group-hover:bg-black/30" />

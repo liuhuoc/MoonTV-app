@@ -26,7 +26,8 @@ import {
 import { fetchVideoDetail, downstreamSearchFast } from '@/lib/downstream';
 import { SearchResult } from '@/lib/types';
 import { getVideoResolutionFromM3u8, processImageUrl } from '@/lib/utils';
-import { addDownloadTask, startDownload } from '@/lib/download';
+import { addDownloadTask, getDownloadTasks, startDownload } from '@/lib/download';
+import Swal from 'sweetalert2';
 
 import EpisodeSelector from '@/components/EpisodeSelector';
 import PageLayout from '@/components/PageLayout';
@@ -189,6 +190,27 @@ function PlayPageClient() {
 
   // 下载选集弹窗
   const [showDownloadSelector, setShowDownloadSelector] = useState(false);
+  const [downloadSelections, setDownloadSelections] = useState<Set<number>>(new Set());
+
+  // 获取已下载的剧集索引列表
+  const getDownloadedEpisodes = (): Set<number> => {
+    const d = detailRef.current;
+    if (!d) return new Set();
+    const title = videoTitleRef.current || d.title || '';
+    const existingTasks = getDownloadTasks();
+    const downloaded = new Set<number>();
+    d.episodes.forEach((url, i) => {
+      const label = d.episodes.length > 1 ? `第${i + 1}集` : '完整版';
+      const exists = existingTasks.find(t =>
+        t.url === url &&
+        t.episodeLabel === label &&
+        t.title === title &&
+        t.status !== 'failed'
+      );
+      if (exists) downloaded.add(i);
+    });
+    return downloaded;
+  };
 
   // 播放进度保存相关
   const saveIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -1179,18 +1201,73 @@ function PlayPageClient() {
     setShowDownloadSelector(true);
   };
 
-  // 确认下载指定剧集
-  const handleConfirmDownload = (url: string, label: string) => {
+  // 确认下载选中的剧集
+  const handleConfirmDownloads = async () => {
     const d = detailRef.current;
     if (!d) return;
-    const task = addDownloadTask({
-      title: videoTitleRef.current || d.title || '未知',
-      episodeLabel: label,
-      sourceName: d.source_name || '',
-      url,
+
+    const title = videoTitleRef.current || d.title || '未知';
+    const sourceName = d.source_name || '';
+    const existingTasks = getDownloadTasks();
+    let addedCount = 0;
+    let skippedCount = 0;
+
+    Array.from(downloadSelections).forEach((index) => {
+      const url = d.episodes[index];
+      const label = d.episodes.length > 1 ? `第${index + 1}集` : '完整版';
+
+      // 跳过已下载且未失败的任务
+      const exists = existingTasks.find(t =>
+        t.url === url &&
+        t.episodeLabel === label &&
+        t.title === title &&
+        t.status !== 'failed'
+      );
+      if (exists) {
+        skippedCount++;
+        return;
+      }
+
+      const task = addDownloadTask({
+        title,
+        episodeLabel: label,
+        sourceName,
+        url,
+      });
+      startDownload(task.id);
+      addedCount++;
     });
-    startDownload(task.id);
-    setShowDownloadSelector(false);
+
+    if (addedCount > 0) {
+      Swal.mixin({
+        toast: true,
+        position: 'top-end',
+        showConfirmButton: false,
+        timer: 2000,
+        timerProgressBar: true,
+        customClass: {
+          popup: '!bg-gray-900 !text-white !rounded-xl !shadow-2xl !border !border-gray-700',
+        },
+      }).fire({
+        icon: 'success',
+        title: `已添加 ${addedCount} 个下载任务`,
+        text: skippedCount > 0 ? `${skippedCount} 个已存在，已跳过` : '',
+      });
+    } else if (skippedCount > 0) {
+      Swal.mixin({
+        toast: true,
+        position: 'top-end',
+        showConfirmButton: false,
+        timer: 2000,
+        timerProgressBar: true,
+        customClass: {
+          popup: '!bg-gray-900 !text-white !rounded-xl !shadow-2xl !border !border-gray-700',
+        },
+      }).fire({
+        icon: 'info',
+        title: '所选剧集均已存在',
+      });
+    }
   };
 
   useEffect(() => {
@@ -2194,7 +2271,9 @@ function PlayPageClient() {
       </div>
 
       {/* 下载选集弹窗 */}
-      {showDownloadSelector && detail && detail.episodes && detail.episodes.length > 0 && (
+      {showDownloadSelector && detail && detail.episodes && detail.episodes.length > 0 && (() => {
+        const downloaded = getDownloadedEpisodes();
+        return (
         <div className='fixed inset-0 z-[1000] flex items-center justify-center'>
           {/* 半透明背景遮罩 */}
           <div
@@ -2202,14 +2281,17 @@ function PlayPageClient() {
             onClick={() => setShowDownloadSelector(false)}
           />
           {/* 弹窗内容 */}
-          <div className='relative z-10 w-full max-w-md mx-4 max-h-[80vh] bg-white dark:bg-gray-900 rounded-2xl shadow-2xl overflow-hidden'>
+          <div className='relative z-10 w-full max-w-md mx-4 max-h-[80vh] bg-white dark:bg-gray-900 rounded-2xl shadow-2xl overflow-hidden flex flex-col'>
             {/* 标题栏 */}
             <div className='flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700'>
               <h2 className='text-lg font-semibold text-gray-900 dark:text-gray-100'>
                 选择要下载的剧集
               </h2>
               <button
-                onClick={() => setShowDownloadSelector(false)}
+                onClick={() => {
+                  setShowDownloadSelector(false);
+                  setDownloadSelections(new Set());
+                }}
                 className='p-1.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400 transition-colors'
               >
                 <svg className='w-5 h-5' fill='none' stroke='currentColor' viewBox='0 0 24 24'>
@@ -2217,40 +2299,89 @@ function PlayPageClient() {
                 </svg>
               </button>
             </div>
+            {/* 操作栏 */}
+            <div className='flex items-center justify-between px-6 py-3 border-b border-gray-100 dark:border-gray-800'>
+              <button
+                onClick={() => {
+                  if (downloadSelections.size === detail.episodes.length) {
+                    setDownloadSelections(new Set());
+                  } else {
+                    setDownloadSelections(new Set(detail.episodes.map((_, i) => i)));
+                  }
+                }}
+                className='text-xs text-blue-500 hover:text-blue-600 font-medium transition-colors'
+              >
+                {downloadSelections.size === detail.episodes.length ? '取消全选' : '全选'}
+              </button>
+              <span className='text-xs text-gray-400'>
+                已选 <span className='text-green-500 font-semibold'>{downloadSelections.size}</span> / {detail.episodes.length}
+              </span>
+            </div>
             {/* 剧集列表 */}
-            <div className='overflow-y-auto max-h-[60vh] p-4'>
+            <div className='overflow-y-auto max-h-[50vh] p-4'>
               <div className='grid grid-cols-5 sm:grid-cols-6 gap-2'>
                 {detail.episodes.map((url, index) => {
                   const episodeNum = index + 1;
-                  const label = detail.episodes.length > 1
-                    ? `第${episodeNum}集`
-                    : '完整版';
                   const isCurrent = index === currentEpisodeIndex;
+                  const isSelected = downloadSelections.has(index);
+                  const isDownloaded = downloaded.has(index);
+                  const isDisabled = isDownloaded;
+
                   return (
                     <button
                       key={episodeNum}
-                      onClick={() => handleConfirmDownload(url, label)}
+                      disabled={isDisabled}
+                      onClick={() => {
+                        if (isDisabled) return;
+                        setDownloadSelections(prev => {
+                          const next = new Set(prev);
+                          if (next.has(index)) next.delete(index);
+                          else next.add(index);
+                          return next;
+                        });
+                      }}
                       className={`h-10 flex items-center justify-center text-sm font-medium rounded-lg transition-all duration-200
-                        ${isCurrent
-                          ? 'bg-green-500 text-white shadow-md'
-                          : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-blue-100 dark:hover:bg-blue-900/30 hover:text-blue-600 dark:hover:text-blue-400'
+                        ${isDisabled
+                          ? 'bg-gray-200 dark:bg-gray-800 text-gray-400 dark:text-gray-600 cursor-not-allowed'
+                          : isSelected
+                            ? 'bg-blue-500 text-white shadow-md'
+                            : isCurrent
+                              ? 'bg-green-500 text-white shadow-md'
+                              : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-blue-100 dark:hover:bg-blue-900/30 hover:text-blue-600 dark:hover:text-blue-400'
                         }`}
                     >
-                      {episodeNum}
+                      {isDownloaded ? (
+                        <svg className='w-4 h-4' fill='none' stroke='currentColor' viewBox='0 0 24 24'>
+                          <path strokeLinecap='round' strokeLinejoin='round' strokeWidth='2' d='M5 13l4 4L19 7' />
+                        </svg>
+                      ) : (
+                        episodeNum
+                      )}
                     </button>
                   );
                 })}
               </div>
             </div>
-            {/* 底部提示 */}
-            <div className='px-6 py-3 border-t border-gray-200 dark:border-gray-700'>
-              <p className='text-xs text-gray-500 dark:text-gray-400 text-center'>
-                共 {detail.episodes.length} 集 · 点击剧集即可开始下载
-              </p>
+            {/* 底部确认按钮 */}
+            <div className='px-6 py-4 border-t border-gray-200 dark:border-gray-700'>
+              <button
+                onClick={handleConfirmDownloads}
+                disabled={downloadSelections.size === 0}
+                className={`w-full py-2.5 rounded-xl text-sm font-semibold transition-all ${
+                  downloadSelections.size > 0
+                    ? 'bg-blue-500 text-white hover:bg-blue-600 active:scale-[0.98] shadow-lg shadow-blue-500/25'
+                    : 'bg-gray-200 dark:bg-gray-800 text-gray-400 dark:text-gray-600 cursor-not-allowed'
+                }`}
+              >
+                {downloadSelections.size > 0
+                  ? `下载 ${downloadSelections.size} 集`
+                  : '请选择要下载的剧集'}
+              </button>
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
     </PageLayout>
   );
 }

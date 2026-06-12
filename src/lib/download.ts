@@ -4,6 +4,8 @@ import { CapacitorHttp, type HttpResponse } from '@capacitor/core';
 import { Directory, Filesystem } from '@capacitor/filesystem';
 import { getDownloadSettings } from './settings';
 
+const activeAbortControllers = new Map<string, AbortController>();
+
 /** 下载任务状态 */
 export type DownloadStatus = 'pending' | 'downloading' | 'paused' | 'completed' | 'failed';
 
@@ -287,6 +289,32 @@ export async function cleanupOrphanedDownloads(): Promise<void> {
   } catch { /* 忽略 */ }
 }
 
+export function pauseDownload(taskId: string): void {
+  const ctrl = activeAbortControllers.get(taskId);
+  if (ctrl) {
+    try { ctrl.abort(); } catch { /* ignore */ }
+    activeAbortControllers.delete(taskId);
+  }
+  updateDownloadTask(taskId, { status: 'paused' });
+}
+
+export function resumeDownload(taskId: string): void {
+  updateDownloadTask(taskId, { status: 'pending' });
+  startDownload(taskId);
+}
+
+export function retryDownload(taskId: string): void {
+  updateDownloadTask(taskId, {
+    status: 'pending',
+    progress: 0,
+    downloadedBytes: 0,
+    totalBytes: 0,
+    error: undefined,
+    speed: '',
+  });
+  startDownload(taskId);
+}
+
 /** 暂停所有下载 */
 export function pauseAllDownloads(): void {
   const tasks = getDownloadTasks();
@@ -373,6 +401,9 @@ export async function startDownload(taskId: string): Promise<void> {
 
   updateDownloadTask(taskId, { status: 'downloading', error: undefined });
 
+  const controller = new AbortController();
+  activeAbortControllers.set(taskId, controller);
+
   try {
     const url = task.url;
     const safeTitle = task.title.replace(/[\/\\:*?"<>|]/g, '_');
@@ -381,13 +412,13 @@ export async function startDownload(taskId: string): Promise<void> {
 
     if (isHlsUrl(url)) {
       // HLS 流：下载所有 ts 片段并合并
-      await downloadHlsStream(taskId, url, fileName);
+      await downloadHlsStream(taskId, url, fileName, controller.signal);
     } else if (isCapacitor()) {
       // Capacitor 环境：直接下载
-      await downloadDirectCapacitor(taskId, url, fileName);
+      await downloadDirectCapacitor(taskId, url, fileName, controller.signal);
     } else {
       // 浏览器环境：使用 XMLHttpRequest 获取进度
-      await downloadWithProgress(taskId, url, fileName);
+      await downloadWithProgress(taskId, url, fileName, controller.signal);
     }
 
     // 下载成功：自动清理缓存（如果设置开启）
@@ -403,12 +434,13 @@ export async function startDownload(taskId: string): Promise<void> {
     await cleanupTaskFiles(taskId);
   } finally {
     // 下载完成或失败后，尝试启动下一个等待中的任务
+    activeAbortControllers.delete(taskId);
     tryStartNextPending();
   }
 }
 
 /** HLS 流下载（下载所有 ts 片段并合并为一个文件） */
-async function downloadHlsStream(taskId: string, playlistUrl: string, fileName: string): Promise<void> {
+async function downloadHlsStream(taskId: string, playlistUrl: string, fileName: string, signal?: AbortSignal): Promise<void> {
   const baseUrl = getBaseUrl(playlistUrl);
 
   // 步骤 1: 获取 m3u8 播放列表
@@ -450,16 +482,20 @@ async function downloadHlsStream(taskId: string, playlistUrl: string, fileName: 
   const segmentBlobs: Blob[] = [];
   let totalDownloaded = 0;
 
+  if (signal?.aborted) throw new Error('下载已取消');
+
   for (let i = 0; i < segments.length; i++) {
     const segUrl = segments[i];
     const segIndex = i + 1;
+
+    if (signal?.aborted) throw new Error('下载已取消');
 
     updateDownloadTask(taskId, {
       speed: `下载片段 ${segIndex}/${segments.length}`,
     });
 
     try {
-      const blob = await downloadSegment(segUrl);
+      const blob = await downloadSegment(segUrl, signal);
       segmentBlobs.push(blob);
       totalDownloaded += blob.size;
 
@@ -468,7 +504,7 @@ async function downloadHlsStream(taskId: string, playlistUrl: string, fileName: 
         progress,
         downloadedBytes: totalDownloaded,
         totalBytes: totalDownloaded,
-        speed: `${segIndex}/${segments.length} 片段`,
+        speed: `${formatBytes(totalDownloaded)} / ${segIndex}/${segments.length} 片段`,
       });
     } catch (err) {
       throw new Error(`下载第 ${segIndex} 个片段失败: ${(err as Error).message}`);
@@ -490,8 +526,10 @@ async function downloadHlsStream(taskId: string, playlistUrl: string, fileName: 
 /** 下载单个片段 */
 async function downloadSegment(
   url: string,
+  signal?: AbortSignal,
 ): Promise<Blob> {
   if (isCapacitor()) {
+    if (signal?.aborted) throw new Error('下载已取消');
     const response: HttpResponse = await CapacitorHttp.request({
       url,
       method: 'GET',
@@ -517,7 +555,7 @@ async function downloadSegment(
     }
     return new Blob(byteArrays, { type: 'video/mp2t' });
   } else {
-    const response = await fetch(url);
+    const response = await fetch(url, { signal });
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }
@@ -526,8 +564,9 @@ async function downloadSegment(
 }
 
 /** Capacitor 环境直接下载（非 HLS） */
-async function downloadDirectCapacitor(taskId: string, url: string, fileName: string): Promise<void> {
-  const blob = await downloadSegment(url);
+async function downloadDirectCapacitor(taskId: string, url: string, fileName: string, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) throw new Error('下载已取消');
+  const blob = await downloadSegment(url, signal);
   await saveBlobToCapacitor(taskId, blob, fileName);
 }
 
@@ -587,8 +626,10 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
 }
 
 /** 浏览器环境下载（带进度，非 HLS） */
-function downloadWithProgress(taskId: string, url: string, fileName: string): Promise<void> {
+function downloadWithProgress(taskId: string, url: string, fileName: string, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(new Error('下载已取消'));
+
     const xhr = new XMLHttpRequest();
     let lastBytes = 0;
     let lastTime = Date.now();
@@ -628,6 +669,11 @@ function downloadWithProgress(taskId: string, url: string, fileName: string): Pr
     xhr.onerror = () => reject(new Error('网络错误'));
     xhr.ontimeout = () => reject(new Error('下载超时'));
     xhr.timeout = 60000;
+
+    signal?.addEventListener('abort', () => {
+      xhr.abort();
+      reject(new Error('下载已取消'));
+    });
 
     xhr.send();
   });
