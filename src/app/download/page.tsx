@@ -83,7 +83,7 @@ function DownloadPageClient() {
                 >
                   {/* 可点击的主区域 */}
                   <div
-                    onClick={() => router.push(`/download/${encodeURIComponent(title)}`)}
+                    onClick={() => router.push(`/download/detail?title=${encodeURIComponent(title)}`)}
                     className='flex items-center gap-4 p-4 cursor-pointer hover:bg-white/5 dark:hover:bg-white/5 transition-colors'
                   >
                     {/* 封面 */}

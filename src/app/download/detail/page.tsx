@@ -1,8 +1,8 @@
 'use client';
 
 import { ArrowLeft, Pause, Play, RotateCcw, X } from 'lucide-react';
-import { useParams, useRouter } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 
 import PageLayout from '@/components/PageLayout';
 import { processImageUrl } from '@/lib/utils';
@@ -19,9 +19,8 @@ import {
 
 function DownloadDetailClient() {
   const router = useRouter();
-  const params = useParams();
-  const encodedTitle = params?.title as string;
-  const title = decodeURIComponent(encodedTitle || '');
+  const searchParams = useSearchParams();
+  const title = searchParams?.get('title') || '';
 
   const [allTasks, setAllTasks] = useState<DownloadTask[]>([]);
 
@@ -58,7 +57,6 @@ function DownloadDetailClient() {
   const handlePlayEpisode = (task: DownloadTask) => {
     if (task.status !== 'completed') return;
     if (task.localFileUri) {
-      // 使用本地文件播放
       router.push(`/play?source=local&id=${task.id}&title=${encodeURIComponent(task.title)}&episode=${encodeURIComponent(task.episodeLabel)}`);
     }
   };
@@ -247,5 +245,9 @@ function DownloadDetailClient() {
 }
 
 export default function DownloadDetailPage() {
-  return <DownloadDetailClient />;
+  return (
+    <Suspense fallback={<div className="p-8 text-center text-gray-500">加载中...</div>}>
+      <DownloadDetailClient />
+    </Suspense>
+  );
 }
