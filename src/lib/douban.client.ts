@@ -392,6 +392,7 @@ export async function getDoubanCategories(
 
     return result;
   } catch (error) {
-    throw new Error(`获取豆瓣分类数据失败: ${(error as Error).message}`);
+    const errMsg = error instanceof Error ? error.message : typeof error === 'string' ? error : JSON.stringify(error);
+    throw new Error(`获取豆瓣分类数据失败: ${errMsg}`);
   }
 }

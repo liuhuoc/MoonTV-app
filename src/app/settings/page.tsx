@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowLeft, RotateCcw } from 'lucide-react';
+import { ArrowLeft, RefreshCw, RotateCcw, Wifi, WifiOff } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
@@ -22,6 +22,39 @@ export default function SettingsPage() {
   // 下载设置
   const [maxConcurrent, setMaxConcurrent] = useState(2);
   const [autoCleanup, setAutoCleanup] = useState(false);
+
+  // 源管理
+  interface SourceStatus {
+    name: string;
+    host: string;
+    status: 'ok' | 'error' | 'unknown';
+    lastCheck: number;
+    errorMessage?: string;
+  }
+
+  const SOURCE_STATUSES_KEY = 'sourceStatuses';
+
+  const DEFAULT_SOURCES: SourceStatus[] = [
+    { name: '360资源', host: '360zy.com', status: 'unknown', lastCheck: 0 },
+    { name: '爱坤资源', host: 'ikunzy.com', status: 'unknown', lastCheck: 0 },
+    { name: '非凡资源', host: 'ffzy.com', status: 'unknown', lastCheck: 0 },
+  ];
+
+  function getSourceStatuses(): SourceStatus[] {
+    if (typeof window === 'undefined') return DEFAULT_SOURCES;
+    try {
+      const raw = localStorage.getItem(SOURCE_STATUSES_KEY);
+      if (raw) return JSON.parse(raw);
+    } catch {}
+    return DEFAULT_SOURCES;
+  }
+
+  function saveSourceStatuses(statuses: SourceStatus[]): void {
+    if (typeof window === 'undefined') return;
+    localStorage.setItem(SOURCE_STATUSES_KEY, JSON.stringify(statuses));
+  }
+
+  const [sourceStatuses, setSourceStatuses] = useState<SourceStatus[]>([]);
 
   useEffect(() => {
     setMounted(true);
@@ -59,6 +92,9 @@ export default function SettingsPage() {
     const dlSettings = getDownloadSettings();
     setMaxConcurrent(dlSettings.maxConcurrent);
     setAutoCleanup(dlSettings.autoCleanup);
+
+    // 源管理
+    setSourceStatuses(getSourceStatuses());
   }, []);
 
   const saveToStorage = (key: string, value: string) => {
@@ -85,7 +121,39 @@ export default function SettingsPage() {
       localStorage.setItem('enableImageProxy', JSON.stringify(false));
       localStorage.setItem('imageProxyUrl', '');
       saveDownloadSettings({ maxConcurrent: 2, autoCleanup: false });
+      saveSourceStatuses(DEFAULT_SOURCES);
     }
+    setSourceStatuses(DEFAULT_SOURCES);
+  };
+
+  const handleTestSource = async (index: number) => {
+    const updated = [...sourceStatuses];
+    const source = { ...updated[index] };
+    source.status = 'unknown';
+    source.lastCheck = Date.now();
+    updated[index] = source;
+    setSourceStatuses(updated);
+    saveSourceStatuses(updated);
+
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      await fetch(`https://${source.host}`, {
+        method: 'HEAD',
+        signal: controller.signal,
+        mode: 'no-cors',
+      });
+      clearTimeout(timeoutId);
+      source.status = 'ok';
+      source.errorMessage = undefined;
+    } catch (err) {
+      source.status = 'error';
+      source.errorMessage = err instanceof Error ? err.message : '连接失败';
+    }
+    source.lastCheck = Date.now();
+    updated[index] = source;
+    setSourceStatuses([...updated]);
+    saveSourceStatuses(updated);
   };
 
   const ToggleSwitch = ({
@@ -316,6 +384,55 @@ export default function SettingsPage() {
                   description='下载完成后自动清理临时 ts 片段文件'
                 />
               </div>
+            </div>
+
+            {/* 源管理 */}
+            <div>
+              <h3 className='text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4'>源管理</h3>
+              <div className='space-y-3'>
+                {sourceStatuses.map((source, i) => (
+                  <div key={source.host} className='flex items-center justify-between py-2'>
+                    <div className='flex items-center gap-3'>
+                      {source.status === 'ok' ? (
+                        <Wifi className='w-4 h-4 text-green-500' />
+                      ) : source.status === 'error' ? (
+                        <WifiOff className='w-4 h-4 text-red-500' />
+                      ) : (
+                        <Wifi className='w-4 h-4 text-gray-400' />
+                      )}
+                      <div>
+                        <h4 className='text-sm font-medium text-gray-700 dark:text-gray-300'>
+                          {source.name}
+                        </h4>
+                        <p className='text-xs text-gray-500 dark:text-gray-400'>
+                          {source.host}
+                          {source.status === 'error' && source.errorMessage && (
+                            <span className='text-red-500 ml-2'>- {source.errorMessage}</span>
+                          )}
+                          {source.status === 'ok' && source.lastCheck > 0 && (
+                            <span className='text-green-500 ml-2'>- 连接正常</span>
+                          )}
+                          {source.lastCheck > 0 && (
+                            <span className='text-gray-400 ml-1'>
+                              ({new Date(source.lastCheck).toLocaleTimeString('zh-CN', { hour12: false })})
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleTestSource(i)}
+                      className='flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors'
+                    >
+                      <RefreshCw className='w-3 h-3' />
+                      测试
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <p className='text-xs text-gray-400 dark:text-gray-500 mt-3'>
+                测试搜索源的连接状态，失败的源在搜索时可能更慢
+              </p>
             </div>
           </div>
 

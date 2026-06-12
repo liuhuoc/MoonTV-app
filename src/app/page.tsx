@@ -65,22 +65,26 @@ function HomeClient() {
         if (moviesResult.status === 'fulfilled' && moviesResult.value.code === 200) {
           setHotMovies(moviesResult.value.list);
         } else {
-          console.warn('热门电影加载失败:', moviesResult.status === 'rejected' ? moviesResult.reason : moviesResult.value.message);
+          const moviesErr = moviesResult.status === 'rejected' ? moviesResult.reason : moviesResult.value?.message;
+          console.warn('热门电影加载失败:', moviesErr instanceof Error ? moviesErr.message : JSON.stringify(moviesErr));
         }
 
         if (tvResult.status === 'fulfilled' && tvResult.value.code === 200) {
           setHotTvShows(tvResult.value.list);
         } else {
-          console.warn('热门剧集加载失败:', tvResult.status === 'rejected' ? tvResult.reason : tvResult.value.message);
+          const tvErr = tvResult.status === 'rejected' ? tvResult.reason : tvResult.value?.message;
+          console.warn('热门剧集加载失败:', tvErr instanceof Error ? tvErr.message : JSON.stringify(tvErr));
         }
 
         if (varietyResult.status === 'fulfilled' && varietyResult.value.code === 200) {
           setHotVarietyShows(varietyResult.value.list);
         } else {
-          console.warn('热门综艺加载失败:', varietyResult.status === 'rejected' ? varietyResult.reason : varietyResult.value.message);
+          const varietyErr = varietyResult.status === 'rejected' ? varietyResult.reason : varietyResult.value?.message;
+          console.warn('热门综艺加载失败:', varietyErr instanceof Error ? varietyErr.message : JSON.stringify(varietyErr));
         }
       } catch (error) {
-        console.error('获取豆瓣数据失败:', error);
+        const errMsg = error instanceof Error ? error.message : JSON.stringify(error);
+        console.error('获取豆瓣数据失败:', errMsg, error);
       } finally {
         setLoading(false);
       }
@@ -207,7 +211,7 @@ function HomeClient() {
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder='搜索电影、电视剧...'
-                  className='w-full h-14 rounded-full bg-[#1a1a2e]/80 dark:bg-[#1a1a2e]/80 py-3 pl-14 pr-12 text-base text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-400/50 focus:bg-[#1a1a2e] border border-white/10 shadow-lg shadow-black/20 transition-all duration-300 dark:text-gray-200 dark:placeholder-gray-600 dark:focus:bg-[#1a1a2e] dark:border-white/10'
+                  className='w-full h-14 rounded-full bg-white dark:bg-[#1a1a2e]/80 py-3 pl-14 pr-12 text-base text-gray-900 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-400/50 focus:border-green-400/50 border border-gray-200 dark:border-white/10 shadow-lg shadow-black/5 dark:shadow-black/20 transition-all duration-300'
                 />
               </div>
             </form>

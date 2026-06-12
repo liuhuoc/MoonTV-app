@@ -122,6 +122,7 @@ function PlayPageClient() {
   const videoYearRef = useRef(videoYear);
   const detailRef = useRef<SearchResult | null>(detail);
   const currentEpisodeIndexRef = useRef(currentEpisodeIndex);
+  const hasInitializedRef = useRef(false);
 
   // 同步最新值到 refs
   useEffect(() => {
@@ -681,6 +682,10 @@ function PlayPageClient() {
     };
 
     const initAll = async () => {
+      // 防止重复初始化（侧滑返回时不再重新搜索）
+      if (hasInitializedRef.current) return;
+      hasInitializedRef.current = true;
+
       if (!currentSource && !currentId && !videoTitle && !searchTitle) {
         setError('缺少必要参数');
         setLoading(false);
@@ -1268,6 +1273,9 @@ function PlayPageClient() {
         title: '所选剧集均已存在',
       });
     }
+
+    setShowDownloadSelector(false);
+    setDownloadSelections(new Set());
   };
 
   useEffect(() => {
@@ -1403,7 +1411,11 @@ function PlayPageClient() {
             ensureVideoSource(video, url);
 
             hls.on(Hls.Events.ERROR, function (event: any, data: any) {
-              console.error('HLS Error:', event, data);
+              // bufferFullError 是非致命错误，不需要处理
+              if (data.details === 'bufferFullError') {
+                return;
+              }
+              console.error('HLS Error:', data.type, data.details);
               if (data.fatal) {
                 switch (data.type) {
                   case Hls.ErrorTypes.NETWORK_ERROR:
@@ -1413,14 +1425,11 @@ function PlayPageClient() {
                   case Hls.ErrorTypes.MEDIA_ERROR:
                     console.log('媒体错误，尝试恢复...');
                     hls.recoverMediaError();
-                    // 恢复后确保视频和音频同步
                     setTimeout(() => {
                       if (video && !video.paused) {
                         video.pause();
                         setTimeout(() => {
-                          video.play().catch(() => {
-                            console.warn('媒体错误恢复后播放失败');
-                          });
+                          video.play().catch(() => { /* ignore */ });
                         }, 100);
                       }
                     }, 500);
@@ -2074,7 +2083,20 @@ function PlayPageClient() {
         {/* 第二行：播放器和选集 */}
         <div className='space-y-3'>
           {/* 折叠控制 - 仅在 lg 及以上屏幕显示 */}
-          <div className='hidden lg:flex justify-end'>
+          <div className='hidden lg:flex justify-end gap-2'>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleDownloadEpisode();
+              }}
+              className='group flex items-center gap-2 px-4 py-2 rounded-full bg-white/70 dark:bg-gray-800/70 backdrop-blur-sm border border-gray-200/40 dark:border-gray-700/40 hover:bg-white dark:hover:bg-gray-800 transition-all duration-200'
+              title='下载当前剧集'
+            >
+              <Download className='w-3.5 h-3.5 text-gray-500 dark:text-gray-400' />
+              <span className='text-xs font-medium text-gray-600 dark:text-gray-300'>
+                下载
+              </span>
+            </button>
             <button
               onClick={() =>
                 setIsEpisodeSelectorCollapsed(!isEpisodeSelectorCollapsed)
@@ -2201,16 +2223,6 @@ function PlayPageClient() {
                   className='ml-3 flex-shrink-0 hover:scale-110 transition-transform duration-200'
                 >
                   <FavoriteIcon filled={favorited} />
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDownloadEpisode();
-                  }}
-                  className='ml-2 flex-shrink-0 hover:scale-110 transition-transform duration-200'
-                  title='下载当前剧集'
-                >
-                  <Download className='h-6 w-6 stroke-[1.5] text-gray-400 dark:text-gray-500 hover:text-blue-400 dark:hover:text-blue-400 transition-colors duration-200' />
                 </button>
               </h1>
 

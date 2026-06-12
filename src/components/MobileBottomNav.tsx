@@ -1,6 +1,6 @@
 'use client';
 
-import { Download, History, Home, Search } from 'lucide-react';
+import { Download, Grid3X3, History, Home } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
@@ -19,7 +19,7 @@ const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
 
   const navItems = [
     { icon: Home, label: '首页', href: '/' },
-    { icon: Search, label: '分类', href: '/douban?type=movie' },
+    { icon: Grid3X3, label: '分类', href: '/douban?type=movie' },
     { icon: History, label: '记录', href: '/history' },
     { icon: Download, label: '下载', href: '/download' },
   ];

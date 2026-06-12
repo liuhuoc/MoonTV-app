@@ -242,7 +242,7 @@ function SearchPageClient() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder='搜索电影、电视剧...'
-                className='w-full h-14 rounded-full bg-[#1a1a2e]/80 dark:bg-[#1a1a2e]/80 py-3 pl-14 pr-12 text-base text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-400/50 focus:bg-[#1a1a2e] border border-white/10 shadow-lg shadow-black/20 transition-all duration-300 dark:text-gray-200 dark:placeholder-gray-600 dark:focus:bg-[#1a1a2e] dark:border-white/10'
+                className='w-full h-14 rounded-full bg-white dark:bg-[#1a1a2e]/80 py-3 pl-14 pr-12 text-base text-gray-900 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-400/50 focus:border-green-400/50 border border-gray-200 dark:border-white/10 shadow-lg shadow-black/5 dark:shadow-black/20 transition-all duration-300'
               />
               {searchQuery && (
                 <button
@@ -374,7 +374,7 @@ function SearchPageClient() {
                           `/search?q=${encodeURIComponent(item.trim())}`
                         );
                       }}
-                      className='px-5 py-2.5 rounded-full text-sm text-gray-300 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 transition-all duration-200 dark:text-gray-300 dark:bg-white/5 dark:hover:bg-white/10 dark:border-white/10 dark:hover:border-white/20'
+                      className='px-5 py-2.5 rounded-full text-sm text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-white/5 hover:bg-gray-200 dark:hover:bg-white/10 border border-gray-200 dark:border-white/10 hover:border-gray-300 dark:hover:border-white/20 transition-all duration-200'
                     >
                       {item}
                     </button>

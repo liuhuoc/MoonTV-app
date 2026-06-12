@@ -215,14 +215,18 @@ async function cleanupTaskFiles(taskId: string): Promise<void> {
   const safeLabel = task.episodeLabel.replace(/[/\\:*?"<>|]/g, '_').slice(0, 20);
   const dirPath = `Download/${safeTitle}/${safeLabel}`;
 
-  // 尝试删除 Data 目录
-  try {
-    await Filesystem.rmdir({ path: dirPath, directory: Directory.Data, recursive: true });
-  } catch { /* 忽略 */ }
-  // 尝试删除 ExternalStorage 目录
-  try {
-    await Filesystem.rmdir({ path: dirPath, directory: Directory.ExternalStorage, recursive: true });
-  } catch { /* 忽略 */ }
+  // 仅在目录存在时才尝试删除 Data 目录
+  if (await dirExists(dirPath, Directory.Data)) {
+    try {
+      await Filesystem.rmdir({ path: dirPath, directory: Directory.Data, recursive: true });
+    } catch { /* 忽略 */ }
+  }
+  // 仅在目录存在时才尝试删除 ExternalStorage 目录
+  if (await dirExists(dirPath, Directory.ExternalStorage)) {
+    try {
+      await Filesystem.rmdir({ path: dirPath, directory: Directory.ExternalStorage, recursive: true });
+    } catch { /* 忽略 */ }
+  }
 }
 
 /** 清理所有已删除或失败任务的残留文件（清理孤儿文件） */
@@ -231,62 +235,64 @@ export async function cleanupOrphanedDownloads(): Promise<void> {
   const tasks = getDownloadTasks();
   const activeTaskIds = new Set(tasks.filter(t => t.status !== 'failed').map(t => t.id));
 
-  // 清理 Data 目录
-  try {
-    if (!(await dirExists('Download', Directory.Data))) return;
-    const result = await Filesystem.readdir({
-      path: 'Download',
-      directory: Directory.Data,
-    });
-    for (const entry of result.files) {
-      if (entry.type === 'directory') {
-        try {
-          const subResult = await Filesystem.readdir({
-            path: `Download/${entry.name}`,
-            directory: Directory.Data,
-          });
-          for (const subEntry of subResult.files) {
-            if (subEntry.type === 'directory') {
-              const isActive = Array.from(activeTaskIds).some(id => {
-                const task = tasks.find(t => t.id === id);
-                if (!task) return false;
-                const safeTitle = task.title.replace(/[/\\:*?"<>|]/g, '_').slice(0, 40);
-                const safeLabel = task.episodeLabel.replace(/[/\\:*?"<>|]/g, '_').slice(0, 20);
-                return entry.name === safeTitle && subEntry.name === safeLabel;
-              });
-              if (!isActive) {
-                await Filesystem.rmdir({
-                  path: `Download/${entry.name}/${subEntry.name}`,
-                  directory: Directory.Data,
-                  recursive: true,
+  // 清理 Data 目录（仅在目录存在时执行）
+  if (await dirExists('Download', Directory.Data)) {
+    try {
+      const result = await Filesystem.readdir({
+        path: 'Download',
+        directory: Directory.Data,
+      });
+      for (const entry of result.files) {
+        if (entry.type === 'directory') {
+          try {
+            const subResult = await Filesystem.readdir({
+              path: `Download/${entry.name}`,
+              directory: Directory.Data,
+            });
+            for (const subEntry of subResult.files) {
+              if (subEntry.type === 'directory') {
+                const isActive = Array.from(activeTaskIds).some(id => {
+                  const task = tasks.find(t => t.id === id);
+                  if (!task) return false;
+                  const safeTitle = task.title.replace(/[/\\:*?"<>|]/g, '_').slice(0, 40);
+                  const safeLabel = task.episodeLabel.replace(/[/\\:*?"<>|]/g, '_').slice(0, 20);
+                  return entry.name === safeTitle && subEntry.name === safeLabel;
                 });
+                if (!isActive) {
+                  await Filesystem.rmdir({
+                    path: `Download/${entry.name}/${subEntry.name}`,
+                    directory: Directory.Data,
+                    recursive: true,
+                  });
+                }
               }
             }
-          }
-        } catch { /* 忽略子目录错误 */ }
+          } catch { /* 忽略子目录错误 */ }
+        }
       }
-    }
-  } catch { /* 忽略 */ }
+    } catch { /* 忽略 */ }
+  }
 
-  // 清理 ExternalStorage
-  try {
-    if (!(await dirExists('Download', Directory.ExternalStorage))) return;
-    const result = await Filesystem.readdir({
-      path: 'Download',
-      directory: Directory.ExternalStorage,
-    });
-    for (const entry of result.files) {
-      if (entry.type === 'directory') {
-        try {
-          await Filesystem.rmdir({
-            path: `Download/${entry.name}`,
-            directory: Directory.ExternalStorage,
-            recursive: true,
-          });
-        } catch { /* 忽略 */ }
+  // 清理 ExternalStorage（仅在目录存在时执行）
+  if (await dirExists('Download', Directory.ExternalStorage)) {
+    try {
+      const result = await Filesystem.readdir({
+        path: 'Download',
+        directory: Directory.ExternalStorage,
+      });
+      for (const entry of result.files) {
+        if (entry.type === 'directory') {
+          try {
+            await Filesystem.rmdir({
+              path: `Download/${entry.name}`,
+              directory: Directory.ExternalStorage,
+              recursive: true,
+            });
+          } catch { /* 忽略 */ }
+        }
       }
-    }
-  } catch { /* 忽略 */ }
+    } catch { /* 忽略 */ }
+  }
 }
 
 export function pauseDownload(taskId: string): void {
@@ -423,7 +429,11 @@ export async function startDownload(taskId: string): Promise<void> {
 
     // 下载成功：自动清理缓存（如果设置开启）
     if (getDownloadSettings().autoCleanup) {
-      await cleanupTaskFiles(taskId);
+      try {
+        await cleanupTaskFiles(taskId);
+      } catch {
+        // cleanupTaskFiles 自身已有错误处理，此处兜底忽略
+      }
     }
   } catch (error) {
     updateDownloadTask(taskId, {
@@ -431,7 +441,11 @@ export async function startDownload(taskId: string): Promise<void> {
       error: (error as Error).message || '下载失败',
     });
     // 下载失败时清理可能残留的临时文件
-    await cleanupTaskFiles(taskId);
+    try {
+      await cleanupTaskFiles(taskId);
+    } catch {
+      // cleanupTaskFiles 自身已有错误处理，此处兜底忽略
+    }
   } finally {
     // 下载完成或失败后，尝试启动下一个等待中的任务
     activeAbortControllers.delete(taskId);
@@ -583,13 +597,29 @@ async function saveBlobToCapacitor(taskId: string, blob: Blob, fileName: string)
   const dirPath = `Download/${safeTitle}/${safeLabel}`;
   const filePath = `${dirPath}/${fileName}`;
 
-  const writeFile = (directory: Directory) =>
-    Filesystem.writeFile({
+  const writeFile = async (directory: Directory) => {
+    // 先确保父目录存在，若不存在则 writeFile 的 recursive:true 会自动创建
+    if (!(await dirExists(dirPath, directory))) {
+      // 尝试确保 Download 根目录存在
+      if (!(await dirExists('Download', directory))) {
+        // 创建一个占位文件来触发目录创建（recursive: true 会自动创建父目录）
+        try {
+          await Filesystem.writeFile({
+            path: 'Download/.placeholder',
+            data: '',
+            directory,
+            recursive: true,
+          });
+        } catch { /* 忽略 */ }
+      }
+    }
+    return Filesystem.writeFile({
       path: filePath,
       data: base64,
       directory,
       recursive: true,
     });
+  };
 
   // 优先使用 Data 目录，Android 11+ ExternalStorage 可能受限
   let result: { uri: string };

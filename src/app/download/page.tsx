@@ -12,7 +12,6 @@ import {
   pauseDownload,
   resumeDownload,
   retryDownload,
-  startDownload,
   subscribeToDownloadUpdates,
   type DownloadTask,
 } from '@/lib/download';
