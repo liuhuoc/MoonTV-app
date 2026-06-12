@@ -211,7 +211,9 @@ function HomeClient() {
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder='搜索电影、电视剧...'
-                  className='w-full h-14 rounded-full bg-white dark:bg-[#1a1a2e]/80 py-3 pl-14 pr-12 text-base text-gray-900 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-400/50 focus:border-green-400/50 border border-gray-200 dark:border-white/10 shadow-lg shadow-black/5 dark:shadow-black/20 transition-all duration-300'
+                  onClick={() => router.push('/search')}
+                  className='w-full h-14 rounded-full bg-white dark:bg-[#1a1a2e]/80 py-3 pl-14 pr-12 text-base text-gray-900 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-400/50 focus:border-green-400/50 border border-gray-200 dark:border-white/10 shadow-lg shadow-black/5 dark:shadow-black/20 transition-colors duration-200 cursor-pointer'
+                  readOnly
                 />
               </div>
             </form>

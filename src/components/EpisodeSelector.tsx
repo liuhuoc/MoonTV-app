@@ -11,7 +11,6 @@ import React, {
 
 import { SearchResult } from '@/lib/types';
 import { getVideoResolutionFromM3u8, processImageUrl } from '@/lib/utils';
-import { addDownloadTask, startDownload } from '@/lib/download';
 
 // 定义视频信息类型
 interface VideoInfo {
@@ -51,6 +50,8 @@ interface EpisodeSelectorProps {
   onDownloadEpisode?: (episodeUrl: string, label: string) => void;
   /** 所有集数的 URL 列表（用于下载模式获取 URL） */
   episodes?: string[];
+  /** 下载按钮点击回调 */
+  onDownloadClick?: () => void;
 }
 
 /**
@@ -72,6 +73,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
   downloadMode = false,
   onDownloadEpisode,
   episodes,
+  onDownloadClick,
 }) => {
   const router = useRouter();
   const pageCount = Math.ceil(totalEpisodes / episodesPerPage);
@@ -87,24 +89,6 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
   // 使用 ref 来避免闭包问题
   const attemptedSourcesRef = useRef<Set<string>>(new Set());
   const videoInfoMapRef = useRef<Map<string, VideoInfo>>(new Map());
-
-  // 下载指定剧集
-  const handleDownloadEpisode = useCallback(
-    (url: string, label: string) => {
-      if (!url) return;
-      const sourceName = availableSources.find(
-        (s) => s.source === currentSource && s.id === currentId
-      )?.source_name || '';
-      const task = addDownloadTask({
-        title: videoTitle || '未知',
-        episodeLabel: label,
-        sourceName,
-        url,
-      });
-      startDownload(task.id);
-    },
-    [videoTitle, availableSources, currentSource, currentId]
-  );
 
   // 同步状态到 ref
   useEffect(() => {
@@ -386,27 +370,45 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
               </div>
             </div>
             {/* 向上/向下按钮 */}
-            <button
-              className='flex-shrink-0 w-8 h-8 rounded-md flex items-center justify-center text-gray-700 hover:text-green-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:text-green-400 dark:hover:bg-white/20 transition-colors transform translate-y-[-4px]'
-              onClick={() => {
-                // 切换集数排序（正序/倒序）
-                setDescending((prev) => !prev);
-              }}
-            >
-              <svg
-                className='w-4 h-4'
-                fill='none'
-                stroke='currentColor'
-                viewBox='0 0 24 24'
+            <div className='flex items-center gap-1 flex-shrink-0'>
+              <button
+                className='flex-shrink-0 w-8 h-8 rounded-md flex items-center justify-center text-gray-700 hover:text-green-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:text-green-400 dark:hover:bg-white/20 transition-colors transform translate-y-[-4px]'
+                onClick={() => {
+                  // 切换集数排序（正序/倒序）
+                  setDescending((prev) => !prev);
+                }}
               >
-                <path
-                  strokeLinecap='round'
-                  strokeLinejoin='round'
-                  strokeWidth='2'
-                  d='M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4'
-                />
-              </svg>
-            </button>
+                <svg
+                  className='w-4 h-4'
+                  fill='none'
+                  stroke='currentColor'
+                  viewBox='0 0 24 24'
+                >
+                  <path
+                    strokeLinecap='round'
+                    strokeLinejoin='round'
+                    strokeWidth='2'
+                    d='M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4'
+                  />
+                </svg>
+              </button>
+              {onDownloadClick && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDownloadClick();
+                  }}
+                  className='flex-shrink-0 w-8 h-8 rounded-md flex items-center justify-center text-gray-500 hover:text-blue-500 hover:bg-blue-50 dark:text-gray-400 dark:hover:text-blue-400 dark:hover:bg-blue-500/10 transition-colors'
+                  title='下载剧集'
+                >
+                  <svg className='w-4 h-4' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2' strokeLinecap='round' strokeLinejoin='round'>
+                    <path d='M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4' />
+                    <polyline points='7 10 12 15 17 10' />
+                    <line x1='12' y1='15' x2='12' y2='3' />
+                  </svg>
+                </button>
+              )}
+            </div>
           </div>
 
           {/* 集数网格 */}
@@ -588,21 +590,6 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
                                   {source.episodes.length} 集
                                 </span>
                               )}
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  const url = source.episodes[0];
-                                  handleDownloadEpisode(url, '全剧');
-                                }}
-                                className='p-1 rounded-full hover:bg-blue-500/10 text-gray-400 hover:text-blue-500 transition-colors'
-                                title='下载此源'
-                              >
-                                <svg className='w-3.5 h-3.5' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2' strokeLinecap='round' strokeLinejoin='round'>
-                                  <path d='M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4' />
-                                  <polyline points='7 10 12 15 17 10' />
-                                  <line x1='12' y1='15' x2='12' y2='3' />
-                                </svg>
-                              </button>
                             </div>
                           </div>
 

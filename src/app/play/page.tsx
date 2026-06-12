@@ -26,7 +26,7 @@ import {
 import { fetchVideoDetail, downstreamSearchFast } from '@/lib/downstream';
 import { SearchResult } from '@/lib/types';
 import { getVideoResolutionFromM3u8, processImageUrl } from '@/lib/utils';
-import { addDownloadTask, getDownloadTasks, startDownload } from '@/lib/download';
+import { addDownloadTask, getDownloadTasks, startDownload, subscribeToDownloadUpdates, type DownloadTask } from '@/lib/download';
 import Swal from 'sweetalert2';
 
 import EpisodeSelector from '@/components/EpisodeSelector';
@@ -123,6 +123,14 @@ function PlayPageClient() {
   const detailRef = useRef<SearchResult | null>(detail);
   const currentEpisodeIndexRef = useRef(currentEpisodeIndex);
   const hasInitializedRef = useRef(false);
+
+  // 下载任务追踪（用于判断是否已下载）
+  const [downloadTasks, setDownloadTasks] = useState<DownloadTask[]>([]);
+  useEffect(() => {
+    setDownloadTasks(getDownloadTasks());
+    const unsub = subscribeToDownloadUpdates(setDownloadTasks);
+    return unsub;
+  }, []);
 
   // 同步最新值到 refs
   useEffect(() => {
@@ -1238,6 +1246,7 @@ function PlayPageClient() {
         episodeLabel: label,
         sourceName,
         url,
+        poster: d.poster || videoCover || '',
       });
       startDownload(task.id);
       addedCount++;
@@ -2078,25 +2087,77 @@ function PlayPageClient() {
                 {` > 第 ${currentEpisodeIndex + 1} 集`}
               </span>
             )}
+            {totalEpisodes === 1 && detail && (() => {
+              const title = videoTitle || '未知影片';
+              const currentUrl = detail.episodes?.[0];
+              const isDownloaded = downloadTasks.some(
+                t => t.title === title && t.status === 'completed'
+              );
+              if (isDownloaded) {
+                return (
+                  <span className='ml-3 inline-flex items-center gap-1 px-3 py-1 rounded-full bg-gray-400/20 text-gray-400 dark:bg-gray-600/20 dark:text-gray-500 text-sm font-medium cursor-not-allowed'>
+                    <Download className='w-3.5 h-3.5' />
+                    已下载
+                  </span>
+                );
+              }
+              return (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (currentUrl) {
+                      const t = videoTitleRef.current || detailRef.current?.title || '未知';
+                      const existingTasks = getDownloadTasks();
+                      const exists = existingTasks.find(
+                        et => et.url === currentUrl && et.title === t && et.status !== 'failed'
+                      );
+                      if (!exists) {
+                        const task = addDownloadTask({
+                          title: t,
+                          episodeLabel: '完整版',
+                          sourceName: detailRef.current?.source_name || '',
+                          url: currentUrl,
+                          poster: detailRef.current?.poster || videoCover || '',
+                        });
+                        startDownload(task.id);
+                        Swal.mixin({
+                          toast: true,
+                          position: 'top-end',
+                          showConfirmButton: false,
+                          timer: 2000,
+                          timerProgressBar: true,
+                        }).fire({
+                          icon: 'success',
+                          title: '已开始下载',
+                        });
+                      } else {
+                        Swal.mixin({
+                          toast: true,
+                          position: 'top-end',
+                          showConfirmButton: false,
+                          timer: 2000,
+                          timerProgressBar: true,
+                        }).fire({
+                          icon: 'info',
+                          title: '该影片已在下载列表中',
+                        });
+                      }
+                    }
+                  }}
+                  className='ml-3 inline-flex items-center gap-1 px-3 py-1 rounded-full bg-blue-500/10 text-blue-500 hover:bg-blue-500/20 text-sm font-medium transition-colors'
+                  title='下载'
+                >
+                  <Download className='w-3.5 h-3.5' />
+                  下载
+                </button>
+              );
+            })()}
           </h1>
         </div>
         {/* 第二行：播放器和选集 */}
         <div className='space-y-3'>
           {/* 折叠控制 - 仅在 lg 及以上屏幕显示 */}
           <div className='hidden lg:flex justify-end gap-2'>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                handleDownloadEpisode();
-              }}
-              className='group flex items-center gap-2 px-4 py-2 rounded-full bg-white/70 dark:bg-gray-800/70 backdrop-blur-sm border border-gray-200/40 dark:border-gray-700/40 hover:bg-white dark:hover:bg-gray-800 transition-all duration-200'
-              title='下载当前剧集'
-            >
-              <Download className='w-3.5 h-3.5 text-gray-500 dark:text-gray-400' />
-              <span className='text-xs font-medium text-gray-600 dark:text-gray-300'>
-                下载
-              </span>
-            </button>
             <button
               onClick={() =>
                 setIsEpisodeSelectorCollapsed(!isEpisodeSelectorCollapsed)
@@ -2200,6 +2261,8 @@ function PlayPageClient() {
                 sourceSearchLoading={sourceSearchLoading}
                 sourceSearchError={sourceSearchError}
                 precomputedVideoInfo={precomputedVideoInfo}
+                episodes={detail?.episodes}
+                onDownloadClick={handleDownloadEpisode}
               />
             </div>
           </div>

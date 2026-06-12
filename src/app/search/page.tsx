@@ -3,7 +3,7 @@
 
 import { ChevronUp, History, Search, X } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Suspense, useEffect, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   addSearchHistory,
@@ -22,6 +22,8 @@ function SearchPageClient() {
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
   // 返回顶部按钮显示状态
   const [showBackToTop, setShowBackToTop] = useState(false);
+  // 记录上次搜索的关键词，防止侧滑返回时重复搜索
+  const lastSearchedQueryRef = useRef<string>('');
 
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -148,13 +150,20 @@ function SearchPageClient() {
     // 当搜索参数变化时更新搜索状态
     const query = searchParams?.get('q');
     if (query) {
+      // 如果已经搜索过相同的关键词，不重复搜索
+      if (lastSearchedQueryRef.current === query && showResults) {
+        setSearchQuery(query);
+        return;
+      }
       setSearchQuery(query);
+      lastSearchedQueryRef.current = query;
       fetchSearchResults(query);
 
       // 保存到搜索历史 (事件监听会自动更新界面)
       addSearchHistory(query);
     } else {
       setShowResults(false);
+      lastSearchedQueryRef.current = '';
     }
   }, [searchParams]);
 

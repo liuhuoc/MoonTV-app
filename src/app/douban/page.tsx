@@ -206,7 +206,8 @@ function DoubanPageClient() {
         throw new Error(data.message || '获取数据失败');
       }
     } catch (err) {
-      console.error(err);
+      const errMsg = err instanceof Error ? err.message : typeof err === 'string' ? err : JSON.stringify(err);
+      console.error('分类加载失败:', errMsg, err);
       if (requestVersionRef.current !== requestVersion) return;
       setDoubanData([]);
       setHasMore(false);
@@ -293,7 +294,8 @@ function DoubanPageClient() {
             throw new Error(data.message || '获取数据失败');
           }
         } catch (err) {
-          console.error(err);
+          const errMsg = err instanceof Error ? err.message : typeof err === 'string' ? err : JSON.stringify(err);
+          console.error('加载更多失败:', errMsg, err);
         } finally {
           setIsLoadingMore(false);
         }

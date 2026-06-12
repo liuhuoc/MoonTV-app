@@ -60,7 +60,13 @@ export async function nativeFetch(
         ok: response.status >= 200 && response.status < 300,
         status: response.status,
         statusText: '',
-        json: async () => JSON.parse(response.data as string),
+        json: async () => {
+          const data = response.data;
+          // CapacitorHttp 返回的 data 可能已经是解析后的对象，而非字符串
+          if (typeof data === 'object' && data !== null) return data;
+          if (typeof data === 'string') return JSON.parse(data);
+          return JSON.parse(data as string);
+        },
         text: async () => response.data as string,
         headers: new Headers(response.headers as Record<string, string>),
         redirected: false,

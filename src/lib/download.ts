@@ -16,6 +16,7 @@ export interface DownloadTask {
   episodeLabel: string;
   sourceName: string;
   url: string;
+  poster?: string;
   status: DownloadStatus;
   progress: number; // 0-100
   downloadedBytes: number;
@@ -158,10 +159,10 @@ export async function deleteDownloadTask(id: string): Promise<void> {
   }
 }
 
-/** 检查目录是否存在（避免 readdir/rmdir 报错） */
+/** 检查目录是否存在（避免 stat 报错，使用 readdir） */
 async function dirExists(path: string, directory: Directory): Promise<boolean> {
   try {
-    await Filesystem.stat({ path, directory });
+    await Filesystem.readdir({ path, directory });
     return true;
   } catch {
     return false;
@@ -598,21 +599,7 @@ async function saveBlobToCapacitor(taskId: string, blob: Blob, fileName: string)
   const filePath = `${dirPath}/${fileName}`;
 
   const writeFile = async (directory: Directory) => {
-    // 先确保父目录存在，若不存在则 writeFile 的 recursive:true 会自动创建
-    if (!(await dirExists(dirPath, directory))) {
-      // 尝试确保 Download 根目录存在
-      if (!(await dirExists('Download', directory))) {
-        // 创建一个占位文件来触发目录创建（recursive: true 会自动创建父目录）
-        try {
-          await Filesystem.writeFile({
-            path: 'Download/.placeholder',
-            data: '',
-            directory,
-            recursive: true,
-          });
-        } catch { /* 忽略 */ }
-      }
-    }
+    // 直接使用 recursive: true 创建目录并写入，不预先检查目录存在性（避免 stat 报错）
     return Filesystem.writeFile({
       path: filePath,
       data: base64,
