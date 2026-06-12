@@ -148,6 +148,60 @@ interface DoubanSubjectCollectionApiResponse {
 }
 
 /**
+ * 缓存配置
+ */
+const DOUBAN_CACHE_KEY = 'douban_cache';
+const DOUBAN_CACHE_TTL = 30 * 60 * 1000; // 30 分钟缓存
+
+interface CachedData {
+  data: DoubanResult;
+  timestamp: number;
+}
+
+/**
+ * 生成缓存 Key - 根据请求参数唯一标识
+ */
+function getCacheKey(params: DoubanCategoriesParams): string {
+  return `${DOUBAN_CACHE_KEY}_${params.kind}_${params.category}_${params.type}_${params.year}_${params.sort}_${params.pageStart}_${params.pageLimit}`;
+}
+
+/**
+ * 从 localStorage 读取缓存
+ */
+function readCache(key: string): DoubanResult | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const cached: CachedData = JSON.parse(raw);
+    // 检查是否过期
+    if (Date.now() - cached.timestamp > DOUBAN_CACHE_TTL) {
+      localStorage.removeItem(key);
+      return null;
+    }
+    return cached.data;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 写入缓存到 localStorage
+ */
+function writeCache(key: string, data: DoubanResult): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const cached: CachedData = {
+      data,
+      timestamp: Date.now(),
+    };
+    localStorage.setItem(key, JSON.stringify(cached));
+  } catch {
+    // localStorage 满了，忽略错误
+  }
+}
+
+/**
  * 检查是否应该使用客户端获取豆瓣数据
  */
 export function shouldUseDoubanClient(): boolean {
@@ -157,6 +211,7 @@ export function shouldUseDoubanClient(): boolean {
 
 /**
  * 客户端豆瓣分类数据获取函数（使用 Capacitor HTTP 绕过 CORS）
+ * 支持 localStorage 缓存，命中缓存直接返回，30 分钟过期
  */
 export async function getDoubanCategories(
   params: DoubanCategoriesParams
@@ -232,6 +287,15 @@ export async function getDoubanCategories(
         })()
       : `https://m.douban.com/rexxar/api/v2/subject/recent_hot/${kind}?start=${pageStart}&limit=${pageLimit}&category=${category}&type=${type}`;
 
+  // 检查缓存（第一页才缓存，翻页数据不缓存）
+  const cacheKey = getCacheKey(params);
+  if (pageStart === 0) {
+    const cached = readCache(cacheKey);
+    if (cached) {
+      return cached;
+    }
+  }
+
   try {
     // Capacitor 原生环境：通过 CapacitorHttp 直连（绕过 CORS）
     // 浏览器环境：尝试多个 CORS 代理
@@ -296,11 +360,18 @@ export async function getDoubanCategories(
       }));
     }
 
-    return {
+    const result = {
       code: 200,
       message: '获取成功',
       list,
     };
+
+    // 只有第一页缓存，翻页数据不缓存
+    if (pageStart === 0) {
+      writeCache(cacheKey, result);
+    }
+
+    return result;
   } catch (error) {
     throw new Error(`获取豆瓣分类数据失败: ${(error as Error).message}`);
   }
