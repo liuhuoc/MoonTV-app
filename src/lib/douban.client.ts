@@ -61,10 +61,37 @@ function getProxyList(): ((url: string) => string)[] {
 }
 
 /**
- * 尝试通过多个 CORS 代理获取数据，任一成功即返回
- * 用户自定义代理优先
+ * 创建带超时的 abort controller
+ */
+function createTimeoutController(ms: number): AbortController {
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), ms);
+  return controller;
+}
+
+/**
+ * 先尝试直接访问，失败后再尝试 CORS 代理
+ * 直接访问成功最快，代理作为后备方案
  */
 async function fetchWithCorsProxy(apiPath: string): Promise<Response> {
+  // 第一步：先尝试直接访问豆瓣 API（最快）
+  try {
+    const directController = createTimeoutController(5000);
+    const directResponse = await fetch(apiPath, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        Referer: 'https://movie.douban.com/',
+      },
+      signal: directController.signal,
+    });
+    if (directResponse.ok) {
+      return directResponse;
+    }
+  } catch {
+    // 直接访问失败（可能是 CORS 错误或网络超时），继续尝试代理
+  }
+
+  // 第二步：尝试代理（作为后备）
   const proxies = getProxyList();
   const controller = new AbortController();
   const TIMEOUT_MS = 6000;
