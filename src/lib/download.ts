@@ -2,6 +2,7 @@
 
 import { CapacitorHttp, type HttpResponse } from '@capacitor/core';
 import { Directory, Filesystem } from '@capacitor/filesystem';
+import { getDownloadSettings } from './settings';
 
 /** 下载任务状态 */
 export type DownloadStatus = 'pending' | 'downloading' | 'paused' | 'completed' | 'failed';
@@ -341,11 +342,34 @@ function getBaseUrl(url: string): string {
   return url;
 }
 
+/** 尝试启动下一个等待中的下载任务 */
+export function tryStartNextPending(): void {
+  const settings = getDownloadSettings();
+  const tasks = getDownloadTasks();
+  const running = tasks.filter(t => t.status === 'downloading').length;
+  if (running >= settings.maxConcurrent) return;
+
+  const next = tasks.find(t => t.status === 'pending');
+  if (next) {
+    // 异步启动，不阻塞当前调用
+    startDownload(next.id);
+  }
+}
+
 /** 开始下载 */
 export async function startDownload(taskId: string): Promise<void> {
   const tasks = getDownloadTasks();
   const task = tasks.find(t => t.id === taskId);
   if (!task || task.status === 'completed') return;
+
+  // 检查并发限制
+  const settings = getDownloadSettings();
+  const running = tasks.filter(t => t.status === 'downloading').length;
+  if (task.status !== 'downloading' && running >= settings.maxConcurrent) {
+    // 达到上限，标记为等待中
+    updateDownloadTask(taskId, { status: 'pending', error: undefined });
+    return;
+  }
 
   updateDownloadTask(taskId, { status: 'downloading', error: undefined });
 
@@ -365,6 +389,11 @@ export async function startDownload(taskId: string): Promise<void> {
       // 浏览器环境：使用 XMLHttpRequest 获取进度
       await downloadWithProgress(taskId, url, fileName);
     }
+
+    // 下载成功：自动清理缓存（如果设置开启）
+    if (getDownloadSettings().autoCleanup) {
+      await cleanupTaskFiles(taskId);
+    }
   } catch (error) {
     updateDownloadTask(taskId, {
       status: 'failed',
@@ -372,6 +401,9 @@ export async function startDownload(taskId: string): Promise<void> {
     });
     // 下载失败时清理可能残留的临时文件
     await cleanupTaskFiles(taskId);
+  } finally {
+    // 下载完成或失败后，尝试启动下一个等待中的任务
+    tryStartNextPending();
   }
 }
 

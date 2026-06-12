@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 import PageLayout from '@/components/PageLayout';
+import { getDownloadSettings, saveDownloadSettings } from '@/lib/settings';
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -17,6 +18,10 @@ export default function SettingsPage() {
   const [enableOptimization, setEnableOptimization] = useState(true);
   const [enableImageProxy, setEnableImageProxy] = useState(false);
   const [enableDoubanProxy, setEnableDoubanProxy] = useState(false);
+
+  // 下载设置
+  const [maxConcurrent, setMaxConcurrent] = useState(2);
+  const [autoCleanup, setAutoCleanup] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -49,6 +54,11 @@ export default function SettingsPage() {
     if (savedEnableOptimization !== null) {
       setEnableOptimization(JSON.parse(savedEnableOptimization));
     }
+
+    // 下载设置
+    const dlSettings = getDownloadSettings();
+    setMaxConcurrent(dlSettings.maxConcurrent);
+    setAutoCleanup(dlSettings.autoCleanup);
   }, []);
 
   const saveToStorage = (key: string, value: string) => {
@@ -64,6 +74,8 @@ export default function SettingsPage() {
     setEnableDoubanProxy(false);
     setEnableImageProxy(false);
     setImageProxyUrl('');
+    setMaxConcurrent(2);
+    setAutoCleanup(false);
 
     if (typeof window !== 'undefined') {
       localStorage.setItem('defaultAggregateSearch', JSON.stringify(true));
@@ -72,6 +84,7 @@ export default function SettingsPage() {
       localStorage.setItem('enableDoubanProxy', JSON.stringify(false));
       localStorage.setItem('enableImageProxy', JSON.stringify(false));
       localStorage.setItem('imageProxyUrl', '');
+      saveDownloadSettings({ maxConcurrent: 2, autoCleanup: false });
     }
   };
 
@@ -228,7 +241,7 @@ export default function SettingsPage() {
             </div>
 
             {/* 图片代理 */}
-            <div>
+            <div className='pb-4 border-b border-gray-100 dark:border-gray-800'>
               <h3 className='text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4'>图片代理</h3>
               <div className='space-y-4'>
                 <ToggleSwitch
@@ -250,6 +263,57 @@ export default function SettingsPage() {
                   disabled={!enableImageProxy}
                   label='图片代理地址'
                   description='仅在启用图片代理时生效'
+                />
+              </div>
+            </div>
+
+            {/* 下载设置 */}
+            <div>
+              <h3 className='text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4'>下载</h3>
+              <div className='space-y-4'>
+                <div className='flex items-center justify-between'>
+                  <div>
+                    <h4 className='text-sm font-medium text-gray-700 dark:text-gray-300'>
+                      最大同时下载数
+                    </h4>
+                    <p className='text-xs text-gray-500 dark:text-gray-400 mt-1'>
+                      同时进行的下载任务数量（1-5）
+                    </p>
+                  </div>
+                  <div className='flex items-center gap-2'>
+                    <button
+                      onClick={() => {
+                        const v = Math.max(1, maxConcurrent - 1);
+                        setMaxConcurrent(v);
+                        saveDownloadSettings({ maxConcurrent: v, autoCleanup });
+                      }}
+                      className='w-8 h-8 rounded-full border border-gray-300 dark:border-gray-600 flex items-center justify-center text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors'
+                    >
+                      -
+                    </button>
+                    <span className='w-8 text-center text-sm font-medium text-gray-700 dark:text-gray-300'>
+                      {maxConcurrent}
+                    </span>
+                    <button
+                      onClick={() => {
+                        const v = Math.min(5, maxConcurrent + 1);
+                        setMaxConcurrent(v);
+                        saveDownloadSettings({ maxConcurrent: v, autoCleanup });
+                      }}
+                      className='w-8 h-8 rounded-full border border-gray-300 dark:border-gray-600 flex items-center justify-center text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors'
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+                <ToggleSwitch
+                  checked={autoCleanup}
+                  onChange={(v) => {
+                    setAutoCleanup(v);
+                    saveDownloadSettings({ maxConcurrent, autoCleanup: v });
+                  }}
+                  label='下载完成后自动清理缓存'
+                  description='下载完成后自动清理临时 ts 片段文件'
                 />
               </div>
             </div>
