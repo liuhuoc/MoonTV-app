@@ -124,24 +124,24 @@ export async function deleteDownloadTask(id: string): Promise<void> {
     const safeLabel = task.episodeLabel.replace(/[/\\:*?"<>|]/g, '_').slice(0, 20);
     const dirPath = `Download/${safeTitle}/${safeLabel}`;
 
-    try {
-      // 尝试删除整个目录（包括所有 ts 片段和 m3u8）
-      await Filesystem.rmdir({
-        path: dirPath,
-        directory: Directory.Data,
-        recursive: true,
-      });
-    } catch {
-      // Data 目录删除失败，尝试 ExternalStorage
+    // 先检查目录是否存在再删除
+    if (await dirExists(dirPath, Directory.Data)) {
+      try {
+        await Filesystem.rmdir({
+          path: dirPath,
+          directory: Directory.Data,
+          recursive: true,
+        });
+      } catch { /* 忽略 */ }
+    }
+    if (await dirExists(dirPath, Directory.ExternalStorage)) {
       try {
         await Filesystem.rmdir({
           path: dirPath,
           directory: Directory.ExternalStorage,
           recursive: true,
         });
-      } catch {
-        // 忽略删除失败
-      }
+      } catch { /* 忽略 */ }
     }
   }
 
@@ -152,6 +152,16 @@ export async function deleteDownloadTask(id: string): Promise<void> {
     } catch {
       // 忽略
     }
+  }
+}
+
+/** 检查目录是否存在（避免 readdir/rmdir 报错） */
+async function dirExists(path: string, directory: Directory): Promise<boolean> {
+  try {
+    await Filesystem.stat({ path, directory });
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -218,14 +228,15 @@ export async function cleanupOrphanedDownloads(): Promise<void> {
   const tasks = getDownloadTasks();
   const activeTaskIds = new Set(tasks.filter(t => t.status !== 'failed').map(t => t.id));
 
+  // 清理 Data 目录
   try {
+    if (!(await dirExists('Download', Directory.Data))) return;
     const result = await Filesystem.readdir({
       path: 'Download',
       directory: Directory.Data,
     });
     for (const entry of result.files) {
       if (entry.type === 'directory') {
-        // 递归清理每个影片目录
         try {
           const subResult = await Filesystem.readdir({
             path: `Download/${entry.name}`,
@@ -233,7 +244,6 @@ export async function cleanupOrphanedDownloads(): Promise<void> {
           });
           for (const subEntry of subResult.files) {
             if (subEntry.type === 'directory') {
-              // 这是剧集目录，检查是否有活跃任务
               const isActive = Array.from(activeTaskIds).some(id => {
                 const task = tasks.find(t => t.id === id);
                 if (!task) return false;
@@ -250,13 +260,14 @@ export async function cleanupOrphanedDownloads(): Promise<void> {
               }
             }
           }
-        } catch { /* 忽略 */ }
+        } catch { /* 忽略子目录错误 */ }
       }
     }
   } catch { /* 忽略 */ }
 
-  // 也清理 ExternalStorage
+  // 清理 ExternalStorage
   try {
+    if (!(await dirExists('Download', Directory.ExternalStorage))) return;
     const result = await Filesystem.readdir({
       path: 'Download',
       directory: Directory.ExternalStorage,

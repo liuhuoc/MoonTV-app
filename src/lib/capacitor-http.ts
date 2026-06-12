@@ -76,7 +76,8 @@ export async function nativeFetch(
         formData: async () => new FormData(),
       } as Response;
     } catch (error) {
-      throw error;
+      const errMsg = error instanceof Error ? error.message : JSON.stringify(error);
+      throw new Error(`CapacitorHttp 请求失败: ${errMsg}`);
     }
   }
 

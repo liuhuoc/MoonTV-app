@@ -2,20 +2,6 @@ import { DoubanItem, DoubanResult } from './types';
 import { nativeFetch } from './capacitor-http';
 
 /**
- * 在 CapacitorAPK 中 CapacitorHttpNative 可绕过 CORS 直连豆瓣
- * 浏览器环境检测 CapacitorHttp 是否可用（同 capacitor-http.ts 逻辑）
- */
-function isCapacitorAvailable(): boolean {
-  if (typeof window === 'undefined') return false;
-  try {
-    const { CapacitorHttp } = (window as any).CapacitorWebVars || {};
-    return !!(CapacitorHttp && typeof CapacitorHttp.request === 'function');
-  } catch {
-    return false;
-  }
-}
-
-/**
  * CORS 代理列表（按优先级）
  */
 const CORS_PROXIES = [
@@ -276,7 +262,7 @@ export async function getDoubanCategories(
 
   const isMovieTagsFilter =
     kind === 'movie' &&
-    (category === '全部' || movieGenresFromSelector.has(category)) &&
+    (category === '全部' || category === '热门' || movieGenresFromSelector.has(category)) &&
     movieRegionsFromSelector.has(type) &&
     (!year || year === '全部' || movieYearsFromSelector.has(year));
 
@@ -284,7 +270,7 @@ export async function getDoubanCategories(
     kind === 'movie' && category.startsWith('movie_');
 
   const tags = isMovieTagsFilter
-    ? [category === '全部' ? null : category, type === '全部' ? null : type].filter(
+    ? [(category === '全部' || category === '热门') ? null : category, type === '全部' ? null : type].filter(
         (v): v is string => Boolean(v)
       )
     : [];
@@ -294,6 +280,7 @@ export async function getDoubanCategories(
     sort === '人气' ? 'U'
     : sort === '评分' ? 'S'
     : sort === '时间' ? 'T'
+    : category === '热门' ? 'U'
     : sort && ['T', 'U', 'S', 'R'].includes(sort) ? sort : 'T';
 
   const target = isMovieSubjectCollection
@@ -325,18 +312,23 @@ export async function getDoubanCategories(
 
   try {
     // Capacitor 原生环境：通过 CapacitorHttp 直连（绕过 CORS）
-    // 浏览器环境：尝试多个 CORS 代理
-    const response = isCapacitorAvailable()
-      ? await nativeFetch(target, {
-          headers: {
-            'User-Agent':
-              'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-            Referer: isMovieTagsFilter ? 'https://movie.douban.com/explore' : 'https://movie.douban.com/',
-            Accept: 'application/json, text/plain, */*',
-          },
-          timeout: 10000,
-        })
-      : await fetchWithCorsProxy(target);
+    // 浏览器环境：nativeFetch 内部回退到原生 fetch
+    // 失败时回退到 CORS 代理
+    let response: Response;
+    try {
+      response = await nativeFetch(target, {
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+          Referer: isMovieTagsFilter ? 'https://movie.douban.com/explore' : 'https://movie.douban.com/',
+          Accept: 'application/json, text/plain, */*',
+        },
+        timeout: 10000,
+      });
+    } catch {
+      // nativeFetch 失败，回退到 CORS 代理
+      response = await fetchWithCorsProxy(target);
+    }
 
     if (!response.ok) {
       throw new Error(`HTTP error! Status: ${response.status}`);

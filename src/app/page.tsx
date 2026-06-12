@@ -2,8 +2,9 @@
 
 'use client';
 
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight, Search } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
 
 // 客户端收藏 API
@@ -22,6 +23,8 @@ import ScrollableRow from '@/components/ScrollableRow';
 import VideoCard from '@/components/VideoCard';
 
 function HomeClient() {
+  const router = useRouter();
+  const [searchQuery, setSearchQuery] = useState('');
   const [hotMovies, setHotMovies] = useState<DoubanItem[]>([]);
   const [hotTvShows, setHotTvShows] = useState<DoubanItem[]>([]);
   const [hotVarietyShows, setHotVarietyShows] = useState<DoubanItem[]>([]);
@@ -173,6 +176,13 @@ function HomeClient() {
     </section>
   );
 
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = searchQuery.trim();
+    if (!trimmed) return;
+    router.push(`/search?q=${encodeURIComponent(trimmed)}`);
+  };
+
   return (
     <PageLayout>
       <div className='px-4 sm:px-10 py-8 sm:py-12 overflow-visible'>
@@ -185,6 +195,22 @@ function HomeClient() {
             <p className='mt-2 text-base sm:text-lg text-gray-500 dark:text-gray-400'>
               发现精彩，随时观看
             </p>
+          </div>
+
+          {/* 搜索框 */}
+          <div className='mb-10 sm:mb-14'>
+            <form onSubmit={handleSearch} className='max-w-2xl'>
+              <div className='relative group'>
+                <Search className='absolute left-5 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400 dark:text-gray-500 transition-colors group-focus-within:text-green-400' />
+                <input
+                  type='text'
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder='搜索电影、电视剧...'
+                  className='w-full h-14 rounded-full bg-[#1a1a2e]/80 dark:bg-[#1a1a2e]/80 py-3 pl-14 pr-12 text-base text-gray-200 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-400/50 focus:bg-[#1a1a2e] border border-white/10 shadow-lg shadow-black/20 transition-all duration-300 dark:text-gray-200 dark:placeholder-gray-600 dark:focus:bg-[#1a1a2e] dark:border-white/10'
+                />
+              </div>
+            </form>
           </div>
 
           {/* 继续观看 */}
