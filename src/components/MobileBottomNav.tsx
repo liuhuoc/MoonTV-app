@@ -1,6 +1,6 @@
 'use client';
 
-import { Download, Film, Home, Search, Tv } from 'lucide-react';
+import { Download, History, Home, Search } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
@@ -19,35 +19,18 @@ const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
 
   const navItems = [
     { icon: Home, label: '首页', href: '/' },
-    { icon: Search, label: '搜索', href: '/search' },
-    {
-      icon: Film,
-      label: '电影',
-      href: '/douban?type=movie',
-    },
-    {
-      icon: Tv,
-      label: '剧集',
-      href: '/douban?type=tv',
-    },
-    {
-      icon: Download,
-      label: '下载',
-      href: '/download',
-    },
+    { icon: Search, label: '分类', href: '/douban?type=movie' },
+    { icon: History, label: '记录', href: '/history' },
+    { icon: Download, label: '下载', href: '/download' },
   ];
 
   const isActive = (href: string) => {
-    const typeMatch = href.match(/type=([^&]+)/)?.[1];
-
-    // 解码URL以进行正确的比较
     const decodedActive = decodeURIComponent(currentActive);
     const decodedItemHref = decodeURIComponent(href);
 
     return (
       decodedActive === decodedItemHref ||
-      (decodedActive.startsWith('/douban') &&
-        decodedActive.includes(`type=${typeMatch}`))
+      (decodedActive.startsWith('/douban') && decodedItemHref.startsWith('/douban'))
     );
   };
 
@@ -65,7 +48,7 @@ const MobileBottomNav = ({ activePath }: MobileBottomNavProps) => {
         {navItems.map((item) => {
           const active = isActive(item.href);
           return (
-            <li key={item.href} className='flex-shrink-0 w-1/5'>
+            <li key={item.href} className='flex-shrink-0 w-1/4'>
               <Link
                 href={item.href}
                 className='flex flex-col items-center justify-center w-full h-14 gap-1 text-xs'
