@@ -25,23 +25,80 @@ const CORS_PROXIES = [
 ];
 
 /**
+ * 读取用户配置的豆瓣代理
+ */
+function getUserDoubanProxy(): { url: string; enabled: boolean } {
+  if (typeof window === 'undefined') return { url: '', enabled: false };
+  try {
+    const enabled = localStorage.getItem('enableDoubanProxy');
+    const url = localStorage.getItem('doubanProxyUrl') || '';
+    return { url, enabled: enabled === 'true' };
+  } catch {
+    return { url: '', enabled: false };
+  }
+}
+
+/**
+ * 获取代理列表：用户自定义代理优先，然后才是公共代理
+ */
+function getProxyList(): ((url: string) => string)[] {
+  const { url, enabled } = getUserDoubanProxy();
+  const list: ((url: string) => string)[] = [];
+
+  if (enabled && url) {
+    // 用户自定义代理放最前面
+    const userProxy = url.includes('{url}') || url.includes('%7Burl%7D')
+      ? url
+      : url.includes('?')
+        ? `${url}${encodeURIComponent('{URL}')}`
+        : `${url}?url={URL}`;
+    list.push((apiPath: string) => userProxy.replace('{URL}', encodeURIComponent(apiPath)).replace('{url}', encodeURIComponent(apiPath)).replace('%7Burl%7D', encodeURIComponent(apiPath)).replace('%7BURL%7D', encodeURIComponent(apiPath)));
+  }
+
+  // 追加公共代理
+  list.push(...CORS_PROXIES);
+  return list;
+}
+
+/**
  * 尝试通过多个 CORS 代理获取数据，任一成功即返回
+ * 用户自定义代理优先
  */
 async function fetchWithCorsProxy(apiPath: string): Promise<Response> {
-  for (const proxyUrl of CORS_PROXIES) {
+  const proxies = getProxyList();
+  const controller = new AbortController();
+  const TIMEOUT_MS = 6000;
+
+  const requests = proxies.map(async (proxyFn) => {
+    const proxyUrl = proxyFn(apiPath);
+    const fetchPromise = fetch(proxyUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      },
+      signal: controller.signal,
+    });
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('timeout')), TIMEOUT_MS)
+    );
     try {
-      const res = await fetch(proxyUrl(apiPath), {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        },
-        signal: AbortSignal.timeout(8000),
-      });
-      if (res.ok) return res;
-    } catch {
-      continue;
+      const res = await Promise.race([fetchPromise, timeout]);
+      if (res.ok) {
+        controller.abort();
+        return res;
+      }
+      throw new Error(`HTTP ${res.status}`);
+    } catch (err) {
+      if ((err as Error).name === 'AbortError') throw err;
+      throw err;
     }
+  });
+
+  try {
+    return await Promise.any(requests);
+  } catch {
+    controller.abort();
+    throw new Error('所有 CORS 代理均不可用');
   }
-  throw new Error('所有 CORS 代理均不可用');
 }
 
 interface DoubanCategoriesParams {

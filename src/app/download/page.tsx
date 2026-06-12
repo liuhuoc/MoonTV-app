@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from 'react';
 
 import PageLayout from '@/components/PageLayout';
 import {
+  cleanupOrphanedDownloads,
   deleteDownloadTask,
   formatBytes,
   getDownloadTasks,
@@ -19,6 +20,8 @@ function DownloadPageClient() {
   useEffect(() => {
     setTasks(getDownloadTasks());
     const unsubscribe = subscribeToDownloadUpdates(setTasks);
+    // 清理孤儿下载文件（已删除任务残留的ts片段等垃圾文件）
+    cleanupOrphanedDownloads().catch(() => { /* 忽略清理错误 */ });
     return unsubscribe;
   }, []);
 
@@ -26,8 +29,8 @@ function DownloadPageClient() {
     await startDownload(taskId);
   }, []);
 
-  const handleDelete = useCallback((taskId: string) => {
-    deleteDownloadTask(taskId);
+  const handleDelete = useCallback(async (taskId: string) => {
+    await deleteDownloadTask(taskId);
   }, []);
 
   return (

@@ -109,10 +109,170 @@ export function updateDownloadTask(id: string, updates: Partial<DownloadTask>): 
   saveTasks(tasks);
 }
 
-/** 删除下载任务 */
-export function deleteDownloadTask(id: string): void {
-  const tasks = getDownloadTasks().filter(t => t.id !== id);
-  saveTasks(tasks);
+/** 删除下载任务（同时清理文件系统中的垃圾文件） */
+export async function deleteDownloadTask(id: string): Promise<void> {
+  const tasks = getDownloadTasks();
+  const task = tasks.find(t => t.id === id);
+  if (!task) return;
+
+  const filtered = tasks.filter(t => t.id !== id);
+  saveTasks(filtered);
+
+  // 清理文件系统中的残留文件
+  if (isCapacitor() && task.title) {
+    const safeTitle = task.title.replace(/[/\\:*?"<>|]/g, '_').slice(0, 40);
+    const safeLabel = task.episodeLabel.replace(/[/\\:*?"<>|]/g, '_').slice(0, 20);
+    const dirPath = `Download/${safeTitle}/${safeLabel}`;
+
+    try {
+      // 尝试删除整个目录（包括所有 ts 片段和 m3u8）
+      await Filesystem.rmdir({
+        path: dirPath,
+        directory: Directory.Data,
+        recursive: true,
+      });
+    } catch {
+      // Data 目录删除失败，尝试 ExternalStorage
+      try {
+        await Filesystem.rmdir({
+          path: dirPath,
+          directory: Directory.ExternalStorage,
+          recursive: true,
+        });
+      } catch {
+        // 忽略删除失败
+      }
+    }
+  }
+
+  // 浏览器环境：清理 IndexedDB 中的片段
+  if (!isCapacitor()) {
+    try {
+      await deleteSegmentsFromIndexedDB(id);
+    } catch {
+      // 忽略
+    }
+  }
+}
+
+/** 清理该任务在 IndexedDB 中的片段数据 */
+async function deleteSegmentsFromIndexedDB(taskId: string): Promise<void> {
+  return new Promise((resolve) => {
+    const request = indexedDB.open('MoonTVDownloads', 1);
+    request.onsuccess = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains('segments')) {
+        db.close();
+        resolve();
+        return;
+      }
+      const tx = db.transaction('segments', 'readwrite');
+      const store = tx.objectStore('segments');
+      // 删除所有匹配前缀的 key
+      const cursorReq = store.openCursor();
+      cursorReq.onsuccess = (e) => {
+        const cursor = (e.target as IDBRequest<IDBCursorWithValue>).result;
+        if (cursor) {
+          if (typeof cursor.key === 'string' && cursor.key.startsWith(taskId)) {
+            cursor.delete();
+          }
+          cursor.continue();
+        }
+      };
+      tx.oncomplete = () => {
+        db.close();
+        resolve();
+      };
+      tx.onerror = () => {
+        db.close();
+        resolve();
+      };
+    };
+    request.onerror = () => resolve();
+  });
+}
+
+/** 清理指定任务的残留文件（不删除任务记录） */
+async function cleanupTaskFiles(taskId: string): Promise<void> {
+  const tasks = getDownloadTasks();
+  const task = tasks.find(t => t.id === taskId);
+  if (!task || !task.title) return;
+
+  const safeTitle = task.title.replace(/[/\\:*?"<>|]/g, '_').slice(0, 40);
+  const safeLabel = task.episodeLabel.replace(/[/\\:*?"<>|]/g, '_').slice(0, 20);
+  const dirPath = `Download/${safeTitle}/${safeLabel}`;
+
+  // 尝试删除 Data 目录
+  try {
+    await Filesystem.rmdir({ path: dirPath, directory: Directory.Data, recursive: true });
+  } catch { /* 忽略 */ }
+  // 尝试删除 ExternalStorage 目录
+  try {
+    await Filesystem.rmdir({ path: dirPath, directory: Directory.ExternalStorage, recursive: true });
+  } catch { /* 忽略 */ }
+}
+
+/** 清理所有已删除或失败任务的残留文件（清理孤儿文件） */
+export async function cleanupOrphanedDownloads(): Promise<void> {
+  if (!isCapacitor()) return;
+  const tasks = getDownloadTasks();
+  const activeTaskIds = new Set(tasks.filter(t => t.status !== 'failed').map(t => t.id));
+
+  try {
+    const result = await Filesystem.readdir({
+      path: 'Download',
+      directory: Directory.Data,
+    });
+    for (const entry of result.files) {
+      if (entry.type === 'directory') {
+        // 递归清理每个影片目录
+        try {
+          const subResult = await Filesystem.readdir({
+            path: `Download/${entry.name}`,
+            directory: Directory.Data,
+          });
+          for (const subEntry of subResult.files) {
+            if (subEntry.type === 'directory') {
+              // 这是剧集目录，检查是否有活跃任务
+              const isActive = Array.from(activeTaskIds).some(id => {
+                const task = tasks.find(t => t.id === id);
+                if (!task) return false;
+                const safeTitle = task.title.replace(/[/\\:*?"<>|]/g, '_').slice(0, 40);
+                const safeLabel = task.episodeLabel.replace(/[/\\:*?"<>|]/g, '_').slice(0, 20);
+                return entry.name === safeTitle && subEntry.name === safeLabel;
+              });
+              if (!isActive) {
+                await Filesystem.rmdir({
+                  path: `Download/${entry.name}/${subEntry.name}`,
+                  directory: Directory.Data,
+                  recursive: true,
+                });
+              }
+            }
+          }
+        } catch { /* 忽略 */ }
+      }
+    }
+  } catch { /* 忽略 */ }
+
+  // 也清理 ExternalStorage
+  try {
+    const result = await Filesystem.readdir({
+      path: 'Download',
+      directory: Directory.ExternalStorage,
+    });
+    for (const entry of result.files) {
+      if (entry.type === 'directory') {
+        try {
+          await Filesystem.rmdir({
+            path: `Download/${entry.name}`,
+            directory: Directory.ExternalStorage,
+            recursive: true,
+          });
+        } catch { /* 忽略 */ }
+      }
+    }
+  } catch { /* 忽略 */ }
 }
 
 /** 暂停所有下载 */
@@ -199,6 +359,8 @@ export async function startDownload(taskId: string): Promise<void> {
       status: 'failed',
       error: (error as Error).message || '下载失败',
     });
+    // 下载失败时清理可能残留的临时文件
+    await cleanupTaskFiles(taskId);
   }
 }
 
@@ -254,7 +416,7 @@ async function downloadHlsStream(taskId: string, playlistUrl: string, fileName: 
     });
 
     try {
-      const blob = await downloadSegment(taskId, segUrl, i, segments.length);
+      const blob = await downloadSegment(segUrl);
       segmentBlobs.push(blob);
       totalDownloaded += blob.size;
 
@@ -284,10 +446,7 @@ async function downloadHlsStream(taskId: string, playlistUrl: string, fileName: 
 
 /** 下载单个片段 */
 async function downloadSegment(
-  taskId: string,
   url: string,
-  index: number,
-  total: number
 ): Promise<Blob> {
   if (isCapacitor()) {
     const response: HttpResponse = await CapacitorHttp.request({
@@ -325,7 +484,7 @@ async function downloadSegment(
 
 /** Capacitor 环境直接下载（非 HLS） */
 async function downloadDirectCapacitor(taskId: string, url: string, fileName: string): Promise<void> {
-  const blob = await downloadSegment(taskId, url, 0, 1);
+  const blob = await downloadSegment(url);
   await saveBlobToCapacitor(taskId, blob, fileName);
 }
 
@@ -334,12 +493,33 @@ async function saveBlobToCapacitor(taskId: string, blob: Blob, fileName: string)
   const arrayBuffer = await blob.arrayBuffer();
   const base64 = arrayBufferToBase64(arrayBuffer);
 
-  const result = await Filesystem.writeFile({
-    path: `Download/${fileName}`,
-    data: base64,
-    directory: Directory.ExternalStorage,
-    recursive: true,
-  });
+  // 使用与清理函数一致的目录结构：Download/Title/Episode/fileName
+  const tasks = getDownloadTasks();
+  const task = tasks.find(t => t.id === taskId);
+  const safeTitle = (task?.title || 'unknown').replace(/[/\\:*?"<>|]/g, '_').slice(0, 40);
+  const safeLabel = (task?.episodeLabel || 'episode').replace(/[/\\:*?"<>|]/g, '_').slice(0, 20);
+  const dirPath = `Download/${safeTitle}/${safeLabel}`;
+  const filePath = `${dirPath}/${fileName}`;
+
+  const writeFile = (directory: Directory) =>
+    Filesystem.writeFile({
+      path: filePath,
+      data: base64,
+      directory,
+      recursive: true,
+    });
+
+  // 优先使用 Data 目录，Android 11+ ExternalStorage 可能受限
+  let result: { uri: string };
+  try {
+    result = await writeFile(Directory.Data);
+  } catch {
+    try {
+      result = await writeFile(Directory.ExternalStorage);
+    } catch (e) {
+      throw new Error(`保存文件失败: ${(e as Error).message}`);
+    }
+  }
 
   updateDownloadTask(taskId, {
     status: 'completed',
