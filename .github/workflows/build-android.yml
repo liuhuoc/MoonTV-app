@@ -2,9 +2,7 @@ name: Build Android APK
 
 on:
   push:
-    branches: [main, master, 'trae/solo-agent-wn7UeG']
-  pull_request:
-    branches: [main, master, 'trae/solo-agent-wn7UeG']
+    branches: [main]
   workflow_dispatch:
     inputs:
       server_url:
