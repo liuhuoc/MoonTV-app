@@ -24,18 +24,16 @@ function SearchPageClient() {
   const [showBackToTop, setShowBackToTop] = useState(false);
   // 记录上次搜索的关键词，防止侧滑返回时重复搜索
   const lastSearchedQueryRef = useRef<string>('');
-  const pendingScrollRestoreRef = useRef<number>(0);
-  const restoredOnceRef = useRef(false);
 
   const SEARCH_CACHE_KEY = 'moontv_search_cache';
 
   const saveSearchCache = (query: string, results: any[]) => {
     try {
-      sessionStorage.setItem(SEARCH_CACHE_KEY, JSON.stringify({ query, results, time: Date.now(), scrollY: window.scrollY || document.body.scrollTop || 0 }));
+      sessionStorage.setItem(SEARCH_CACHE_KEY, JSON.stringify({ query, results, time: Date.now() }));
     } catch { /* ignore */ }
   };
 
-  const loadSearchCache = (): { query: string; results: any[]; scrollY: number } | null => {
+  const loadSearchCache = (): { query: string; results: any[] } | null => {
     try {
       const raw = sessionStorage.getItem(SEARCH_CACHE_KEY);
       if (!raw) return null;
@@ -160,56 +158,12 @@ function SearchPageClient() {
 
     document.body.addEventListener('scroll', handleScroll, { passive: true });
 
-    const handleLeave = () => {
-      const scrollY = document.body.scrollTop || window.scrollY || 0;
-      try {
-        const raw = sessionStorage.getItem(SEARCH_CACHE_KEY);
-        if (raw) {
-          const cache = JSON.parse(raw);
-          cache.scrollY = scrollY;
-          sessionStorage.setItem(SEARCH_CACHE_KEY, JSON.stringify(cache));
-        }
-      } catch { /* ignore */ }
-    };
-    window.addEventListener('pagehide', handleLeave);
-    window.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'hidden') handleLeave();
-    });
-
     return () => {
       unsubscribe();
       isRunning = false;
-      handleLeave();
       document.body.removeEventListener('scroll', handleScroll);
-      window.removeEventListener('pagehide', handleLeave);
     };
   }, []);
-
-  // 侧滑返回时恢复滚动位置
-  useEffect(() => {
-    if (showResults && pendingScrollRestoreRef.current > 0) {
-      const targetY = pendingScrollRestoreRef.current;
-      pendingScrollRestoreRef.current = 0;
-      restoredOnceRef.current = true;
-      const restore = () => {
-        document.body.scrollTop = targetY;
-        window.scrollTo(0, targetY);
-        if (document.documentElement) {
-          document.documentElement.scrollTop = targetY;
-        }
-      };
-      let attempts = 0;
-      const maxAttempts = 10;
-      const tryRestore = () => {
-        restore();
-        attempts++;
-        if (document.body.scrollTop !== targetY && window.scrollY !== targetY && attempts < maxAttempts) {
-          setTimeout(tryRestore, 100);
-        }
-      };
-      tryRestore();
-    }
-  }, [showResults, searchResults]);
 
   useEffect(() => {
     // 当搜索参数变化时更新搜索状态
@@ -228,9 +182,6 @@ function SearchPageClient() {
         setShowResults(true);
         lastSearchedQueryRef.current = query;
         setIsLoading(false);
-        if (cached.scrollY > 0 && !restoredOnceRef.current) {
-          pendingScrollRestoreRef.current = cached.scrollY;
-        }
         return;
       }
       setSearchQuery(query);

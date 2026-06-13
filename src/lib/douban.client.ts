@@ -291,9 +291,9 @@ export async function getDoubanCategories(
     (kind === 'movie' && tvShowTags[category]);
 
   const isMovieTagsFilter =
-    (kind === 'movie' || kind === 'tv') &&
+    kind === 'movie' &&
     (category === '全部' || category === '热门' || movieGenresFromSelector.has(category)) &&
-    (kind === 'tv' || movieRegionsFromSelector.has(type)) &&
+    (isAnimationFilter || movieRegionsFromSelector.has(type)) &&
     (!year || year === '全部' || movieYearsFromSelector.has(year));
 
   const isMovieSubjectCollection =
@@ -324,7 +324,7 @@ export async function getDoubanCategories(
 
   const target = isMovieSubjectCollection
     ? `https://m.douban.com/rexxar/api/v2/subject_collection/${category}/items?start=${pageStart}&count=${pageLimit}`
-    : (isMovieTagsFilter || isTVShowFilter || isAnimationFilter)
+    : (isMovieTagsFilter || isAnimationFilter)
       ? (() => {
           const searchParams = new URLSearchParams({
             sort: sortValue,
@@ -391,7 +391,7 @@ export async function getDoubanCategories(
             : '',
         year: item.card_subtitle?.match(/(\d{4})/)?.[1] || '',
       }));
-    } else if (isMovieTagsFilter || isTVShowFilter || isAnimationFilter) {
+    } else if (isMovieTagsFilter || isAnimationFilter) {
       const doubanData = (await response.json()) as {
         data: Array<{
           id: string;

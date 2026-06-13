@@ -699,6 +699,15 @@ function PlayPageClient() {
           setVideoUrl(dlTask.localFileUri);
           setVideoTitle(dlTask.title || '');
           setVideoCover(dlTask.poster || '');
+          setTotalEpisodes(1);
+          setDetail({
+            id: dlTask.id,
+            title: dlTask.title,
+            source: 'local',
+            source_name: '本地文件',
+            episodes: [dlTask.localFileUri],
+            douban_id: 0,
+          } as any);
           setLoading(false);
           return;
         }
