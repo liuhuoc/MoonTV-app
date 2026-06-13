@@ -7,7 +7,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import PageLayout from '@/components/PageLayout';
 import { processImageUrl } from '@/lib/utils';
 import {
-  cleanupOrphanedDownloads,
   deleteDownloadTask,
   getDownloadTasks,
   retryDownload,

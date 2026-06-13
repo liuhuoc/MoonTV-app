@@ -263,7 +263,7 @@ export async function getDoubanCategories(
   const isMovieTagsFilter =
     (kind === 'movie' || kind === 'tv') &&
     (category === '全部' || category === '热门' || movieGenresFromSelector.has(category)) &&
-    (kind === 'tv' || movieRegionsFromSelector.has(type)) &&
+    (kind === 'tv' || isAnimationFilter || movieRegionsFromSelector.has(type)) &&
     (!year || year === '全部' || movieYearsFromSelector.has(year));
 
   const isMovieSubjectCollection =
@@ -286,15 +286,31 @@ export async function getDoubanCategories(
     (kind === 'tv' && (category === 'tv' || category === 'show')) ||
     (kind === 'movie' && tvShowTags[category]);
 
-  const tags = isMovieTagsFilter
-    ? [(category === '全部' || category === '热门') ? null : category, type === '全部' ? null : type].filter(
-        (v): v is string => Boolean(v)
-      )
-    : isTVShowFilter
-      ? [tvShowTags[category] || category, type === '全部' || type === category ? null : tvShowTags[type] || type].filter(
+  // 动画专用标签：始终加 动画 作为基础标签
+  const animationRegionTags: Record<string, string> = {
+    '全部': '',
+    '日本': '日本动画',
+    '大陆': '国产动画',
+    '美国': '欧美动画',
+  };
+
+  const isAnimationFilter =
+    kind === 'movie' && animationRegionTags[type] !== undefined;
+
+  const tags = isAnimationFilter
+    ? [
+        '动画',
+        animationRegionTags[type] || '',
+      ].filter((v): v is string => Boolean(v))
+    : isMovieTagsFilter
+      ? [(category === '全部' || category === '热门') ? null : category, type === '全部' ? null : type].filter(
           (v): v is string => Boolean(v)
         )
-      : [];
+      : isTVShowFilter
+        ? [tvShowTags[category] || category, type === '全部' || type === category ? null : tvShowTags[type] || type].filter(
+            (v): v is string => Boolean(v)
+          )
+        : [];
   const yearRange =
     isMovieTagsFilter && year && year !== '全部' ? `${year},${year}` : null;
   const sortValue =
@@ -306,7 +322,7 @@ export async function getDoubanCategories(
 
   const target = isMovieSubjectCollection
     ? `https://m.douban.com/rexxar/api/v2/subject_collection/${category}/items?start=${pageStart}&count=${pageLimit}`
-    : (isMovieTagsFilter || isTVShowFilter)
+    : (isMovieTagsFilter || isTVShowFilter || isAnimationFilter)
       ? (() => {
           const searchParams = new URLSearchParams({
             sort: sortValue,
@@ -373,7 +389,7 @@ export async function getDoubanCategories(
             : '',
         year: item.card_subtitle?.match(/(\d{4})/)?.[1] || '',
       }));
-    } else if (isMovieTagsFilter || isTVShowFilter) {
+    } else if (isMovieTagsFilter || isTVShowFilter || isAnimationFilter) {
       const doubanData = (await response.json()) as {
         data: Array<{
           id: string;

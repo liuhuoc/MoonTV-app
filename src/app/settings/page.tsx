@@ -23,7 +23,7 @@ export default function SettingsPage() {
 
   // 下载设置
   const [maxConcurrent, setMaxConcurrent] = useState(2);
-  const [autoCleanup, setAutoCleanup] = useState(false);
+  const [autoCleanup, setAutoCleanup] = useState(true);
 
   // 折叠面板状态
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['search', 'play', 'download', 'source', 'proxy']));
@@ -164,7 +164,7 @@ export default function SettingsPage() {
     setEnableImageProxy(false);
     setImageProxyUrl('');
     setMaxConcurrent(2);
-    setAutoCleanup(false);
+    setAutoCleanup(true);
 
     if (typeof window !== 'undefined') {
       localStorage.setItem('defaultAggregateSearch', JSON.stringify(true));
@@ -173,7 +173,7 @@ export default function SettingsPage() {
       localStorage.setItem('enableDoubanProxy', JSON.stringify(false));
       localStorage.setItem('enableImageProxy', JSON.stringify(false));
       localStorage.setItem('imageProxyUrl', '');
-      saveDownloadSettings({ maxConcurrent: 2, autoCleanup: false });
+      saveDownloadSettings({ maxConcurrent: 2, autoCleanup: true });
       saveEnabledSources(new Set(allApiSites.map(s => s.key)));
       saveSourceStatuses({});
       saveCustomSources([]);
@@ -219,27 +219,48 @@ export default function SettingsPage() {
 
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 6000);
-      await fetch(source.api, {
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      const resp = await fetch(source.api, {
         method: 'GET',
         signal: controller.signal,
-        headers: { 'Accept': 'application/json' },
+        mode: 'cors',
       });
       clearTimeout(timeoutId);
-      statusesRef[source.key] = {
-        name: source.name,
-        host,
-        status: 'ok',
-        lastCheck: Date.now(),
-      };
+      if (resp.ok || resp.status > 0) {
+        statusesRef[source.key] = {
+          name: source.name,
+          host,
+          status: 'ok',
+          lastCheck: Date.now(),
+        };
+      } else {
+        throw new Error(`HTTP ${resp.status}`);
+      }
     } catch (err) {
-      statusesRef[source.key] = {
-        name: source.name,
-        host,
-        status: 'error',
-        lastCheck: Date.now(),
-        errorMessage: err instanceof Error ? err.message : '连接失败',
-      };
+      try {
+        const controller2 = new AbortController();
+        const timeoutId2 = setTimeout(() => controller2.abort(), 8000);
+        await fetch(source.api, {
+          method: 'GET',
+          signal: controller2.signal,
+          mode: 'no-cors',
+        });
+        clearTimeout(timeoutId2);
+        statusesRef[source.key] = {
+          name: source.name,
+          host,
+          status: 'ok',
+          lastCheck: Date.now(),
+        };
+      } catch {
+        statusesRef[source.key] = {
+          name: source.name,
+          host,
+          status: 'error',
+          lastCheck: Date.now(),
+          errorMessage: '连接失败',
+        };
+      }
     }
     setSourceStatuses({ ...statusesRef });
     saveSourceStatuses(statusesRef);

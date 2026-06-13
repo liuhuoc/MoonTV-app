@@ -9,7 +9,7 @@ export interface DownloadSettings {
 
 const DEFAULT_DOWNLOAD_SETTINGS: DownloadSettings = {
   maxConcurrent: 2,
-  autoCleanup: false,
+  autoCleanup: true,
 };
 
 export function getDownloadSettings(): DownloadSettings {

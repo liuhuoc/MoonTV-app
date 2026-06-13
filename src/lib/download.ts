@@ -113,7 +113,7 @@ export function updateDownloadTask(id: string, updates: Partial<DownloadTask>): 
   saveTasks(tasks);
 }
 
-/** 删除下载任务（同时清理文件系统中的垃圾文件） */
+/** 删除下载任务 */
 export async function deleteDownloadTask(id: string): Promise<void> {
   const tasks = getDownloadTasks();
   const task = tasks.find(t => t.id === id);
@@ -121,28 +121,6 @@ export async function deleteDownloadTask(id: string): Promise<void> {
 
   const filtered = tasks.filter(t => t.id !== id);
   saveTasks(filtered);
-
-  // 清理文件系统中的残留文件
-  if (isCapacitor() && task.title) {
-    const safeTitle = task.title.replace(/[/\\:*?"<>|]/g, '_').slice(0, 40);
-    const safeLabel = task.episodeLabel.replace(/[/\\:*?"<>|]/g, '_').slice(0, 20);
-    const dirPath = `Download/${safeTitle}/${safeLabel}`;
-
-    try {
-      await Filesystem.rmdir({
-        path: dirPath,
-        directory: Directory.Data,
-        recursive: true,
-      });
-    } catch { /* 忽略 */ }
-    try {
-      await Filesystem.rmdir({
-        path: dirPath,
-        directory: Directory.ExternalStorage,
-        recursive: true,
-      });
-    } catch { /* 忽略 */ }
-  }
 
   // 浏览器环境：清理 IndexedDB 中的片段
   if (!isCapacitor()) {
@@ -189,84 +167,6 @@ async function deleteSegmentsFromIndexedDB(taskId: string): Promise<void> {
     };
     request.onerror = () => resolve();
   });
-}
-
-/** 清理指定任务的残留文件（不删除任务记录） */
-async function cleanupTaskFiles(taskId: string): Promise<void> {
-  const tasks = getDownloadTasks();
-  const task = tasks.find(t => t.id === taskId);
-  if (!task || !task.title) return;
-
-  const safeTitle = task.title.replace(/[/\\:*?"<>|]/g, '_').slice(0, 40);
-  const safeLabel = task.episodeLabel.replace(/[/\\:*?"<>|]/g, '_').slice(0, 20);
-  const dirPath = `Download/${safeTitle}/${safeLabel}`;
-
-  try {
-    await Filesystem.rmdir({ path: dirPath, directory: Directory.Data, recursive: true });
-  } catch { /* 忽略 */ }
-  try {
-    await Filesystem.rmdir({ path: dirPath, directory: Directory.ExternalStorage, recursive: true });
-  } catch { /* 忽略 */ }
-}
-
-/** 清理所有已删除或失败任务的残留文件（清理孤儿文件） */
-export async function cleanupOrphanedDownloads(): Promise<void> {
-  if (!isCapacitor()) return;
-  const tasks = getDownloadTasks();
-  const activeTaskIds = new Set(tasks.filter(t => t.status !== 'failed').map(t => t.id));
-
-  try {
-    const result = await Filesystem.readdir({
-      path: 'Download',
-      directory: Directory.Data,
-    });
-    for (const entry of result.files) {
-      if (entry.type === 'directory') {
-        try {
-          const subResult = await Filesystem.readdir({
-            path: `Download/${entry.name}`,
-            directory: Directory.Data,
-          });
-          for (const subEntry of subResult.files) {
-            if (subEntry.type === 'directory') {
-              const isActive = Array.from(activeTaskIds).some(id => {
-                const task = tasks.find(t => t.id === id);
-                if (!task) return false;
-                const safeTitle = task.title.replace(/[/\\:*?"<>|]/g, '_').slice(0, 40);
-                const safeLabel = task.episodeLabel.replace(/[/\\:*?"<>|]/g, '_').slice(0, 20);
-                return entry.name === safeTitle && subEntry.name === safeLabel;
-              });
-              if (!isActive) {
-                await Filesystem.rmdir({
-                  path: `Download/${entry.name}/${subEntry.name}`,
-                  directory: Directory.Data,
-                  recursive: true,
-                });
-              }
-            }
-          }
-        } catch { /* 忽略子目录错误 */ }
-      }
-    }
-  } catch { /* 忽略 */ }
-
-  try {
-    const result = await Filesystem.readdir({
-      path: 'Download',
-      directory: Directory.ExternalStorage,
-    });
-    for (const entry of result.files) {
-      if (entry.type === 'directory') {
-        try {
-          await Filesystem.rmdir({
-            path: `Download/${entry.name}`,
-            directory: Directory.ExternalStorage,
-            recursive: true,
-          });
-        } catch { /* 忽略 */ }
-      }
-    }
-  } catch { /* 忽略 */ }
 }
 
 export function pauseDownload(taskId: string): void {
@@ -487,11 +387,17 @@ async function downloadHlsStream(taskId: string, playlistUrl: string, fileName: 
     speed: '解析中...',
   });
 
-  // 步骤 3: 下载所有片段
-  const segmentBlobs: Blob[] = [];
+  // 步骤 3: 下载所有片段并逐个保存到文件系统
   let totalDownloaded = 0;
 
   if (signal?.aborted) throw new Error('下载已取消');
+
+  // 准备文件系统写入路径
+  const tasks = getDownloadTasks();
+  const task = tasks.find(t => t.id === taskId);
+  const safeTitle = (task?.title || 'unknown').replace(/[/\\:*?"<>|]/g, '_').slice(0, 40);
+  const safeLabel = (task?.episodeLabel || 'episode').replace(/[/\\:*?"<>|]/g, '_').slice(0, 20);
+  const dirPath = `Download/${safeTitle}/${safeLabel}`;
 
   for (let i = 0; i < segments.length; i++) {
     const segUrl = segments[i];
@@ -503,32 +409,82 @@ async function downloadHlsStream(taskId: string, playlistUrl: string, fileName: 
       speed: `下载片段 ${segIndex}/${segments.length}`,
     });
 
-    try {
-      const blob = await downloadSegment(segUrl, signal);
-      segmentBlobs.push(blob);
-      totalDownloaded += blob.size;
+    let blob: Blob | null = null;
+    let lastErr: Error | null = null;
 
-      const progress = Math.round(((i + 1) / segments.length) * 100);
-      updateDownloadTask(taskId, {
-        progress,
-        downloadedBytes: totalDownloaded,
-        totalBytes: totalDownloaded,
-        speed: `${formatBytes(totalDownloaded)} / ${segIndex}/${segments.length} 片段`,
-      });
-    } catch (err) {
-      throw new Error(`下载第 ${segIndex} 个片段失败: ${(err as Error).message}`);
+    // 单个片段最多重试 3 次
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        blob = await downloadSegment(segUrl, signal);
+        break;
+      } catch (err) {
+        lastErr = err as Error;
+        if (attempt < 3 && !signal?.aborted) {
+          await new Promise(r => setTimeout(r, 1000 * attempt));
+        }
+      }
     }
+
+    if (!blob) {
+      throw new Error(`下载第 ${segIndex} 个片段失败(重试3次): ${lastErr?.message || '未知错误'}`);
+    }
+
+    totalDownloaded += blob.size;
+
+    // 逐个保存片段到文件系统（避免全部合并后 OOM）
+    if (isCapacitor()) {
+      const arrayBuffer = await blob.arrayBuffer();
+      const base64 = arrayBufferToBase64(arrayBuffer);
+      const segFilePath = `${dirPath}/seg${String(segIndex).padStart(5, '0')}.ts`;
+
+      try {
+        await Filesystem.writeFile({
+          path: segFilePath,
+          data: base64,
+          directory: Directory.Data,
+          recursive: true,
+        });
+      } catch {
+        try {
+          await Filesystem.writeFile({
+            path: segFilePath,
+            data: base64,
+            directory: Directory.ExternalStorage,
+            recursive: true,
+          });
+        } catch (e) {
+          throw new Error(`保存片段失败: ${(e as Error).message}`);
+        }
+      }
+    } else {
+      // 浏览器环境：保存到 IndexedDB
+      await saveSegmentToIndexedDB(taskId, segIndex, blob);
+    }
+
+    const progress = Math.round(((i + 1) / segments.length) * 100);
+    updateDownloadTask(taskId, {
+      progress,
+      downloadedBytes: totalDownloaded,
+      totalBytes: totalDownloaded,
+      speed: `${formatBytes(totalDownloaded)} / ${segIndex}/${segments.length} 片段`,
+    });
   }
 
-  // 步骤 4: 合并所有片段
-  updateDownloadTask(taskId, { speed: '正在合并片段...' });
-  const combinedBlob = new Blob(segmentBlobs, { type: 'video/mp2t' });
-
-  // 步骤 5: 保存文件
-  if (isCapacitor()) {
-    await saveBlobToCapacitor(taskId, combinedBlob, fileName);
+  // 步骤 4: 合并并保存（浏览器环境）
+  if (!isCapacitor()) {
+    updateDownloadTask(taskId, { speed: '正在合并片段...' });
+    await mergeAndSaveBrowser(taskId, segments.length, fileName);
   } else {
-    saveBlobToBrowser(taskId, combinedBlob, fileName);
+    // Capacitor 环境：文件已逐个保存，标记完成
+    updateDownloadTask(taskId, {
+      status: 'completed',
+      progress: 100,
+      downloadedBytes: totalDownloaded,
+      totalBytes: totalDownloaded,
+      speed: '完成',
+      localPath: `file://${dirPath}`,
+      localFileUri: `file://${dirPath}`,
+    });
   }
 }
 
@@ -584,16 +540,13 @@ async function saveBlobToCapacitor(taskId: string, blob: Blob, fileName: string)
   const arrayBuffer = await blob.arrayBuffer();
   const base64 = arrayBufferToBase64(arrayBuffer);
 
-  // 使用与清理函数一致的目录结构：Download/Title/Episode/fileName
   const tasks = getDownloadTasks();
   const task = tasks.find(t => t.id === taskId);
   const safeTitle = (task?.title || 'unknown').replace(/[/\\:*?"<>|]/g, '_').slice(0, 40);
   const safeLabel = (task?.episodeLabel || 'episode').replace(/[/\\:*?"<>|]/g, '_').slice(0, 20);
-  const dirPath = `Download/${safeTitle}/${safeLabel}`;
-  const filePath = `${dirPath}/${fileName}`;
+  const filePath = `Download/${safeTitle}/${safeLabel}/${fileName}`;
 
   const writeFile = async (directory: Directory) => {
-    // 直接使用 recursive: true 创建目录并写入，不预先检查目录存在性（避免 stat 报错）
     return Filesystem.writeFile({
       path: filePath,
       data: base64,
@@ -602,7 +555,6 @@ async function saveBlobToCapacitor(taskId: string, blob: Blob, fileName: string)
     });
   };
 
-  // 优先使用 Data 目录，Android 11+ ExternalStorage 可能受限
   let result: { uri: string };
   try {
     result = await writeFile(Directory.Data);
@@ -622,6 +574,92 @@ async function saveBlobToCapacitor(taskId: string, blob: Blob, fileName: string)
     speed: '完成',
     localPath: result.uri,
     localFileUri: result.uri,
+  });
+}
+
+/** 将单个 ts 片段保存到 IndexedDB */
+async function saveSegmentToIndexedDB(taskId: string, index: number, blob: Blob): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open('MoonTVDownloads', 1);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains('segments')) {
+        db.createObjectStore('segments');
+      }
+    };
+    request.onsuccess = () => {
+      const db = request.result;
+      const tx = db.transaction('segments', 'readwrite');
+      const store = tx.objectStore('segments');
+      store.put(blob, `${taskId}_seg${String(index).padStart(5, '0')}`);
+      tx.oncomplete = () => { db.close(); resolve(); };
+      tx.onerror = () => { db.close(); reject(tx.error); };
+    };
+    request.onerror = () => reject(request.error);
+  });
+}
+
+/** 浏览器环境：从 IndexedDB 取出所有片段合并并保存 */
+async function mergeAndSaveBrowser(taskId: string, totalSegments: number, fileName: string): Promise<void> {
+  const blobs: Blob[] = [];
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open('MoonTVDownloads', 1);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains('segments')) {
+        db.createObjectStore('segments');
+      }
+    };
+    request.onsuccess = async () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains('segments')) {
+        db.close();
+        reject(new Error('片段存储不存在'));
+        return;
+      }
+      const tx = db.transaction('segments', 'readonly');
+      const store = tx.objectStore('segments');
+      let loadedCount = 0;
+      for (let i = 1; i <= totalSegments; i++) {
+        const key = `${taskId}_seg${String(i).padStart(5, '0')}`;
+        try {
+          const blob = await new Promise<Blob>((res, rej) => {
+            const req = store.get(key);
+            req.onsuccess = () => res(req.result);
+            req.onerror = () => rej(req.error);
+          });
+          if (blob) blobs.push(blob);
+          loadedCount++;
+        } catch (err) {
+          db.close();
+          reject(new Error(`读取片段 ${i} 失败: ${(err as Error).message}`));
+          return;
+        }
+      }
+      db.close();
+      if (blobs.length === 0) {
+        reject(new Error('没有可合并的片段'));
+        return;
+      }
+      const combinedBlob = new Blob(blobs, { type: 'video/mp2t' });
+      saveBlobToBrowser(taskId, combinedBlob, fileName);
+
+      // 清理 IndexedDB
+      try {
+        const cleanReq = indexedDB.open('MoonTVDownloads', 1);
+        cleanReq.onsuccess = () => {
+          const cleanDb = cleanReq.result;
+          const cleanTx = cleanDb.transaction('segments', 'readwrite');
+          const cleanStore = cleanTx.objectStore('segments');
+          for (let i = 1; i <= totalSegments; i++) {
+            cleanStore.delete(`${taskId}_seg${String(i).padStart(5, '0')}`);
+          }
+          cleanTx.oncomplete = () => cleanDb.close();
+        };
+      } catch { /* ignore */ }
+      resolve();
+    };
+    request.onerror = () => reject(request.error);
   });
 }
 
