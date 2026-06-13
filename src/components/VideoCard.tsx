@@ -294,7 +294,7 @@ export default function VideoCard({
               console.log('[VideoCard] 图片加载成功:', processImageUrl(actualPoster).substring(0, 80));
               setIsLoading(true);
             }}
-            onError={(e) => {
+            onError={() => {
               console.error('[VideoCard] 图片加载失败:', processImageUrl(actualPoster).substring(0, 80), 'title:', actualTitle?.substring(0, 20));
               setHasError(true);
               setIsLoading(true);

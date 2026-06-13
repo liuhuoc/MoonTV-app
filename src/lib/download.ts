@@ -669,7 +669,6 @@ async function mergeAndSaveBrowser(taskId: string, totalSegments: number, fileNa
       }
       const tx = db.transaction('segments', 'readonly');
       const store = tx.objectStore('segments');
-      let loadedCount = 0;
       for (let i = 1; i <= totalSegments; i++) {
         const key = `${taskId}_seg${String(i).padStart(5, '0')}`;
         try {
@@ -679,7 +678,6 @@ async function mergeAndSaveBrowser(taskId: string, totalSegments: number, fileNa
             req.onerror = () => rej(req.error);
           });
           if (blob) blobs.push(blob);
-          loadedCount++;
         } catch (err) {
           db.close();
           reject(new Error(`读取片段 ${i} 失败: ${(err as Error).message}`));
