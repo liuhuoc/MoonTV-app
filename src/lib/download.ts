@@ -491,13 +491,13 @@ async function downloadHlsStream(taskId: string, playlistUrl: string, fileName: 
     `seg${String(i + 1).padStart(5, '0')}.ts`
   );
 
-  const m3u8Content = [
+  const playlistContent = [
     '#EXTM3U',
     '#EXT-X-VERSION:3',
     `#EXT-X-TARGETDURATION:10`,
     '#EXT-X-MEDIA-SEQUENCE:0',
     '#EXT-X-PLAYLIST-TYPE:VOD',
-    ...segFilePaths.map((seg, i) => [
+    ...segFilePaths.map((seg) => [
       `#EXTINF:10.0,`,
       seg,
     ].join('\n')),
@@ -509,7 +509,7 @@ async function downloadHlsStream(taskId: string, playlistUrl: string, fileName: 
   try {
     await Filesystem.writeFile({
       path: m3u8Path,
-      data: m3u8Content,
+      data: playlistContent,
       directory: Directory.Data,
       recursive: true,
     });
@@ -517,7 +517,7 @@ async function downloadHlsStream(taskId: string, playlistUrl: string, fileName: 
     try {
       await Filesystem.writeFile({
         path: m3u8Path,
-        data: m3u8Content,
+        data: playlistContent,
         directory: Directory.ExternalStorage,
         recursive: true,
       });

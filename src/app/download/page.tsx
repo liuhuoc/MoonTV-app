@@ -25,12 +25,8 @@ function DownloadPageClient() {
     (async () => {
       try {
         const allTasks = getDownloadTasks();
-        const failedIds = new Set(allTasks.filter(t => t.status === 'failed').map(t => t.id));
-        const completedIds = new Set(allTasks.filter(t => t.status === 'completed').map(t => t.id));
-        // 对于有 completed 任务的同 title+episode，删除 failed 任务的文件不会影响已完成的结果
         for (const task of allTasks) {
           if (task.status !== 'failed') continue;
-          // 检查是否有相同内容的已完成任务
           const hasCompleted = allTasks.some(
             t => t.status === 'completed' && t.title === task.title && t.episodeLabel === task.episodeLabel
           );

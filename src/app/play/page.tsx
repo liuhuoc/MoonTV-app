@@ -94,7 +94,6 @@ function PlayPageClient() {
   const [videoTitle, setVideoTitle] = useState(searchParams?.get('title') || '');
   const [videoYear, setVideoYear] = useState(searchParams?.get('year') || '');
   const [videoCover, setVideoCover] = useState('');
-  const [isLocalPlay, setIsLocalPlay] = useState(false);
   // 当前源和ID
   const [currentSource, setCurrentSource] = useState(
     searchParams?.get('source') || ''
@@ -700,7 +699,6 @@ function PlayPageClient() {
           setVideoUrl(dlTask.localFileUri);
           setVideoTitle(dlTask.title || '');
           setVideoCover(dlTask.poster || '');
-          setIsLocalPlay(true);
           setLoading(false);
           return;
         }
