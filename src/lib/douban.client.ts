@@ -260,15 +260,6 @@ export async function getDoubanCategories(
     Array.from({ length: 10 }, (_, idx) => String(currentYear - idx))
   );
 
-  const isMovieTagsFilter =
-    (kind === 'movie' || kind === 'tv') &&
-    (category === '全部' || category === '热门' || movieGenresFromSelector.has(category)) &&
-    (kind === 'tv' || isAnimationFilter || movieRegionsFromSelector.has(type)) &&
-    (!year || year === '全部' || movieYearsFromSelector.has(year));
-
-  const isMovieSubjectCollection =
-    kind === 'movie' && category.startsWith('movie_');
-
   const tvShowTags: Record<string, string> = {
     'tv': '电视剧',
     'tv_domestic': '国产剧',
@@ -282,11 +273,6 @@ export async function getDoubanCategories(
     'show_foreign': '国外综艺',
   };
 
-  const isTVShowFilter =
-    (kind === 'tv' && (category === 'tv' || category === 'show')) ||
-    (kind === 'movie' && tvShowTags[category]);
-
-  // 动画专用标签：始终加 动画 作为基础标签
   const animationRegionTags: Record<string, string> = {
     '全部': '',
     '日本': '日本动画',
@@ -296,6 +282,19 @@ export async function getDoubanCategories(
 
   const isAnimationFilter =
     kind === 'movie' && animationRegionTags[type] !== undefined;
+
+  const isTVShowFilter =
+    (kind === 'tv' && (category === 'tv' || category === 'show')) ||
+    (kind === 'movie' && tvShowTags[category]);
+
+  const isMovieTagsFilter =
+    (kind === 'movie' || kind === 'tv') &&
+    (category === '全部' || category === '热门' || movieGenresFromSelector.has(category)) &&
+    (kind === 'tv' || isAnimationFilter || movieRegionsFromSelector.has(type)) &&
+    (!year || year === '全部' || movieYearsFromSelector.has(year));
+
+  const isMovieSubjectCollection =
+    kind === 'movie' && category.startsWith('movie_');
 
   const tags = isAnimationFilter
     ? [
