@@ -184,12 +184,18 @@ function SearchPageClient() {
         setShowResults(true);
         lastSearchedQueryRef.current = query;
         setIsLoading(false);
-        requestAnimationFrame(() => {
+        setTimeout(() => {
           if (cached.scrollY > 0) {
-            window.scrollTo(0, cached.scrollY);
             document.body.scrollTop = cached.scrollY;
+            window.scrollTo(0, cached.scrollY);
           }
-        });
+        }, 50);
+        setTimeout(() => {
+          if (cached.scrollY > 0) {
+            document.body.scrollTop = cached.scrollY;
+            window.scrollTo(0, cached.scrollY);
+          }
+        }, 200);
         return;
       }
       setSearchQuery(query);

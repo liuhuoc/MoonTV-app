@@ -2,7 +2,7 @@
 
 import { ArrowLeft, ChevronDown, ChevronRight, Plus, RefreshCw, RotateCcw, Trash2, Wifi, WifiOff } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import PageLayout from '@/components/PageLayout';
 import { getAllApiSites } from '@/lib/config';
@@ -87,6 +87,7 @@ export default function SettingsPage() {
 
   const [enabledSources, setEnabledSources] = useState<Set<string>>(new Set());
   const [sourceStatuses, setSourceStatuses] = useState<Record<string, SourceStatus>>({});
+  const sourceStatusesRef = useRef<Record<string, SourceStatus>>({});
   const [customSources, setCustomSources] = useState<ApiSite[]>([]);
   const [allSources, setAllSources] = useState<ApiSite[]>([]);
 
@@ -128,10 +129,18 @@ export default function SettingsPage() {
 
     const enabled = getEnabledSources();
     setEnabledSources(enabled);
-    setSourceStatuses(getSourceStatuses());
+    const savedStatuses = getSourceStatuses();
+    setSourceStatuses(savedStatuses);
+    sourceStatusesRef.current = savedStatuses;
     const custom = getCustomSources();
     setCustomSources(custom);
-    setAllSources([...allApiSites, ...custom]);
+    const merged = [...allApiSites, ...custom];
+    const sortedMerged = [...merged].sort((a, b) => {
+      const aEnabled = enabled.has(a.key) ? 1 : 0;
+      const bEnabled = enabled.has(b.key) ? 1 : 0;
+      return bEnabled - aEnabled;
+    });
+    setAllSources(sortedMerged);
   }, []);
 
   const saveToStorage = (key: string, value: string) => {
@@ -198,15 +207,15 @@ export default function SettingsPage() {
 
   const handleTestSource = async (source: ApiSite) => {
     const host = source.api ? (() => { try { return new URL(source.api).hostname; } catch { return source.api; } })() : '';
-    const statuses = { ...sourceStatuses };
-    statuses[source.key] = {
+    const statusesRef = sourceStatusesRef.current;
+    statusesRef[source.key] = {
       name: source.name,
       host,
       status: 'unknown',
       lastCheck: Date.now(),
     };
-    setSourceStatuses(statuses);
-    saveSourceStatuses(statuses);
+    setSourceStatuses({ ...statusesRef });
+    saveSourceStatuses(statusesRef);
 
     try {
       const controller = new AbortController();
@@ -217,14 +226,14 @@ export default function SettingsPage() {
         headers: { 'Accept': 'application/json' },
       });
       clearTimeout(timeoutId);
-      statuses[source.key] = {
+      statusesRef[source.key] = {
         name: source.name,
         host,
         status: 'ok',
         lastCheck: Date.now(),
       };
     } catch (err) {
-      statuses[source.key] = {
+      statusesRef[source.key] = {
         name: source.name,
         host,
         status: 'error',
@@ -232,8 +241,8 @@ export default function SettingsPage() {
         errorMessage: err instanceof Error ? err.message : '连接失败',
       };
     }
-    setSourceStatuses({ ...statuses });
-    saveSourceStatuses(statuses);
+    setSourceStatuses({ ...statusesRef });
+    saveSourceStatuses(statusesRef);
   };
 
   const handleAddSource = () => {

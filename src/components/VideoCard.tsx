@@ -2,7 +2,7 @@
 
 import { CheckCircle, Heart, Link, Play } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   deleteFavorite,
@@ -13,7 +13,7 @@ import {
   subscribeToDataUpdates,
 } from '@/lib/db.client';
 import { SearchResult } from '@/lib/types';
-import { processImageUrl } from '@/lib/utils';
+import { getImageProxyList, processImageUrl } from '@/lib/utils';
 
 import { ImagePlaceholder } from '@/components/ImagePlaceholder';
 
@@ -58,6 +58,7 @@ export default function VideoCard({
   const [favorited, setFavorited] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [hasError, setHasError] = useState(false);
+  const imgRetryRef = useRef(0);
 
   const isAggregate = from === 'search' && !!items?.length;
 
@@ -289,11 +290,20 @@ export default function VideoCard({
             src={processImageUrl(actualPoster)}
             alt={actualTitle}
             referrerPolicy="no-referrer"
+            crossOrigin="anonymous"
             className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 ease-out group-hover:scale-105"
             onLoad={() => setIsLoading(true)}
-            onError={() => {
-              setHasError(true);
-              setIsLoading(true);
+            onError={(e) => {
+              const img = e.currentTarget;
+              const retry = imgRetryRef.current;
+              const proxies = getImageProxyList();
+              if (retry < proxies.length) {
+                imgRetryRef.current = retry + 1;
+                img.src = proxies[retry](actualPoster);
+              } else {
+                setHasError(true);
+                setIsLoading(true);
+              }
             }}
           />
         ) : (

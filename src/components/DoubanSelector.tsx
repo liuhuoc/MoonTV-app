@@ -40,18 +40,12 @@ const DoubanSelector: React.FC<DoubanSelectorProps> = ({
     { label: '喜剧', value: '喜剧' },
     { label: '爱情', value: '爱情' },
     { label: '动作', value: '动作' },
-    { label: '惊悚', value: '惊悚' },
-    { label: '犯罪', value: '犯罪' },
-    { label: '悬疑', value: '悬疑' },
-    { label: '恐怖', value: '恐怖' },
     { label: '科幻', value: '科幻' },
+    { label: '悬疑', value: '悬疑' },
+    { label: '犯罪', value: '犯罪' },
+    { label: '恐怖', value: '恐怖' },
     { label: '奇幻', value: '奇幻' },
-    { label: '传记', value: '传记' },
-    { label: '战争', value: '战争' },
-    { label: '家庭', value: '家庭' },
     { label: '冒险', value: '冒险' },
-    { label: '人性', value: '人性' },
-    { label: '青春', value: '青春' },
   ];
 
   // 电影的二级选择器选项
@@ -64,13 +58,6 @@ const DoubanSelector: React.FC<DoubanSelectorProps> = ({
     { label: '日本', value: '日本' },
     { label: '韩国', value: '韩国' },
     { label: '英国', value: '英国' },
-    { label: '法国', value: '法国' },
-    { label: '德国', value: '德国' },
-    { label: '意大利', value: '意大利' },
-    { label: '西班牙', value: '西班牙' },
-    { label: '印度', value: '印度' },
-    { label: '泰国', value: '泰国' },
-    { label: '俄罗斯', value: '俄罗斯' },
   ];
 
   // 电视剧选择器选项

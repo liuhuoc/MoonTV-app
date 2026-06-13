@@ -28,14 +28,32 @@ export function getImageProxyUrl(): string | null {
     : null;
 }
 
+const IMAGE_PROXIES = [
+  (url: string) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+  (url: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+  (url: string) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+];
+
+export function getImageProxyList(): ((url: string) => string)[] {
+  return IMAGE_PROXIES;
+}
+
 /**
- * 处理图片 URL，如果设置了图片代理则使用代理
+ * 处理图片 URL，对豆瓣图片尝试多个 CORS 代理
  */
 export function processImageUrl(originalUrl: string): string {
   if (!originalUrl) return originalUrl;
 
   const proxyUrl = getImageProxyUrl();
-  if (proxyUrl) return `${proxyUrl}${encodeURIComponent(originalUrl)}`;
+  if (proxyUrl) {
+    // 用户自定义代理：直接拼接
+    if (proxyUrl.includes('{url}') || proxyUrl.includes('%7Burl%7D')) {
+      return proxyUrl
+        .replace('{url}', encodeURIComponent(originalUrl))
+        .replace('%7Burl%7D', encodeURIComponent(originalUrl));
+    }
+    return `${proxyUrl}${encodeURIComponent(originalUrl)}`;
+  }
 
   if (typeof window === 'undefined') return originalUrl;
 
@@ -53,7 +71,7 @@ export function processImageUrl(originalUrl: string): string {
     hostname.endsWith('doubanio.com') || hostname.endsWith('douban.com');
 
   if (isDoubanImage) {
-    return `https://api.allorigins.win/raw?url=${encodeURIComponent(originalUrl)}`;
+    return IMAGE_PROXIES[0](originalUrl);
   }
 
   return originalUrl;

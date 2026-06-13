@@ -311,16 +311,44 @@ function isHlsUrl(url: string): boolean {
   return /\.m3u8(\?.*)?$/i.test(url) || url.includes('.m3u8');
 }
 
-/** 解析 m3u8 播放列表，提取所有 .ts 片段 URL */
+/** 检查 m3u8 是否为 Master Playlist（包含 #EXT-X-STREAM-INF） */
+function isMasterPlaylist(content: string): boolean {
+  return content.includes('#EXT-X-STREAM-INF');
+}
+
+/** 从 Master Playlist 中选择第一个视频 variant 的 m3u8 URL */
+function extractFirstVariantUrl(content: string, baseUrl: string): string | null {
+  const lines = content.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].trim().startsWith('#EXT-X-STREAM-INF')) {
+      for (let j = i + 1; j < lines.length; j++) {
+        const trimmed = lines[j].trim();
+        if (!trimmed || trimmed.startsWith('#')) continue;
+        return resolveUrl(trimmed, baseUrl);
+      }
+    }
+  }
+  return null;
+}
+
+/** 解析 m3u8 播放列表，提取所有媒体片段 URL */
 function parseM3u8Segments(m3u8Content: string, baseUrl: string): string[] {
   const lines = m3u8Content.split('\n');
   const segments: string[] = [];
   for (const line of lines) {
     const trimmed = line.trim();
-    // 跳过注释行、空行和标签行
     if (!trimmed || trimmed.startsWith('#')) continue;
-    // 找到 .ts 片段
-    if (trimmed.endsWith('.ts') || trimmed.includes('.ts')) {
+    // 匹配常见片段格式：.ts, .m4s, .mp4, .aac, .cmfv, .cmfa
+    if (
+      trimmed.endsWith('.ts') ||
+      trimmed.endsWith('.m4s') ||
+      trimmed.endsWith('.mp4') ||
+      trimmed.endsWith('.aac') ||
+      trimmed.endsWith('.cmfv') ||
+      trimmed.endsWith('.cmfa') ||
+      trimmed.includes('.ts?') ||
+      trimmed.includes('.m4s?')
+    ) {
       segments.push(resolveUrl(trimmed, baseUrl));
     }
   }
@@ -411,31 +439,42 @@ export async function startDownload(taskId: string): Promise<void> {
 
 /** HLS 流下载（下载所有 ts 片段并合并为一个文件） */
 async function downloadHlsStream(taskId: string, playlistUrl: string, fileName: string, signal?: AbortSignal): Promise<void> {
-  const baseUrl = getBaseUrl(playlistUrl);
+  const fetchM3u8Content = async (url: string): Promise<string> => {
+    if (isCapacitor()) {
+      const response: HttpResponse = await CapacitorHttp.request({
+        url,
+        method: 'GET',
+        responseType: 'text',
+        connectTimeout: 15000,
+        readTimeout: 15000,
+      });
+      if (response.status < 200 || response.status >= 300 || !response.data) {
+        throw new Error(`获取播放列表失败: HTTP ${response.status}`);
+      }
+      return response.data as string;
+    } else {
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`获取播放列表失败: HTTP ${response.status}`);
+      }
+      return response.text();
+    }
+  };
 
-  // 步骤 1: 获取 m3u8 播放列表
-  let m3u8Content: string;
-  if (isCapacitor()) {
-    const response: HttpResponse = await CapacitorHttp.request({
-      url: playlistUrl,
-      method: 'GET',
-      responseType: 'text',
-      connectTimeout: 15000,
-      readTimeout: 15000,
-    });
-    if (response.status < 200 || response.status >= 300 || !response.data) {
-      throw new Error(`获取播放列表失败: HTTP ${response.status}`);
+  let m3u8Content = await fetchM3u8Content(playlistUrl);
+  let workUrl = playlistUrl;
+
+  if (isMasterPlaylist(m3u8Content)) {
+    const variantUrl = extractFirstVariantUrl(m3u8Content, getBaseUrl(playlistUrl));
+    if (!variantUrl) {
+      throw new Error('Master Playlist 中未找到变体流');
     }
-    m3u8Content = response.data as string;
-  } else {
-    const response = await fetch(playlistUrl);
-    if (!response.ok) {
-      throw new Error(`获取播放列表失败: HTTP ${response.status}`);
-    }
-    m3u8Content = await response.text();
+    workUrl = variantUrl;
+    m3u8Content = await fetchM3u8Content(variantUrl);
   }
 
-  // 步骤 2: 解析 ts 片段列表
+  const baseUrl = getBaseUrl(workUrl);
+
   const segments = parseM3u8Segments(m3u8Content, baseUrl);
   if (segments.length === 0) {
     throw new Error('播放列表中没有找到视频片段');
