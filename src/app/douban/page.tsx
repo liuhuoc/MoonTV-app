@@ -30,7 +30,7 @@ function DoubanPageClient() {
   const requestVersionRef = useRef(0);
 
   const type = searchParams?.get('type') || 'movie';
-  const pageSize = type === 'movie' ? 20 : 25;
+  const pageSize = type === 'movie' || type === 'animation' ? 20 : 25;
 
   // 选择器状态 - 完全独立，不依赖URL参数
   const [primarySelection, setPrimarySelection] = useState<string>(() => {
@@ -40,20 +40,21 @@ function DoubanPageClient() {
     if (type === 'movie') return '全部';
     if (type === 'tv') return 'tv';
     if (type === 'show') return 'show';
+    if (type === 'animation') return '日本';
     return '全部';
   });
   const [yearSelection, setYearSelection] = useState<string>(() => {
-    return type === 'movie' ? '全部' : '全部';
+    return type === 'movie' || type === 'animation' ? '全部' : '全部';
   });
   const [sortSelection, setSortSelection] = useState<string>(() => {
-    return type === 'movie' ? '时间' : '时间';
+    return type === 'movie' || type === 'animation' ? '时间' : '时间';
   });
   const timeCursorYearRef = useRef<number>(new Date().getFullYear());
   const timeCursorStartRef = useRef<number>(0);
   const timeCursorExhaustedRef = useRef<boolean>(false);
 
   const isMovieTimeCursorMode =
-    type === 'movie' && sortSelection === '时间' && yearSelection === '全部';
+    (type === 'movie' || type === 'animation') && sortSelection === '时间' && yearSelection === '全部';
 
   // 初始化时标记选择器为准备好状态
   useEffect(() => {
@@ -86,6 +87,11 @@ function DoubanPageClient() {
       setSecondarySelection('show');
       setYearSelection('全部');
       setSortSelection('时间');
+    } else if (type === 'animation') {
+      setPrimarySelection('热门');
+      setSecondarySelection('日本');
+      setYearSelection('全部');
+      setSortSelection('时间');
     } else {
       setPrimarySelection('');
       setSecondarySelection('全部');
@@ -116,7 +122,7 @@ function DoubanPageClient() {
         };
       }
       return {
-        kind: type as 'tv' | 'movie',
+        kind: (type === 'animation' ? 'movie' : type) as 'tv' | 'movie',
         category: primarySelection,
         type: secondarySelection,
         year: yearSelection,
@@ -199,7 +205,7 @@ function DoubanPageClient() {
       if (data.code === 200) {
         setDoubanData(data.list);
         setHasMore(
-          type === 'movie' ? data.list.length > 0 : data.list.length === pageSize
+          (type === 'movie' || type === 'animation') ? data.list.length > 0 : data.list.length === pageSize
         );
         setLoading(false);
       } else {
@@ -288,7 +294,7 @@ function DoubanPageClient() {
           if (data.code === 200) {
             setDoubanData((prev) => [...prev, ...data.list]);
             setHasMore(
-              type === 'movie' ? data.list.length > 0 : data.list.length === pageSize
+              (type === 'movie' || type === 'animation') ? data.list.length > 0 : data.list.length === pageSize
             );
           } else {
             throw new Error(data.message || '获取数据失败');
@@ -389,7 +395,7 @@ function DoubanPageClient() {
   };
 
   const getPageTitle = () => {
-    return type === 'movie' ? '电影' : type === 'tv' ? '电视剧' : '综艺';
+    return type === 'movie' ? '电影' : type === 'tv' ? '电视剧' : type === 'animation' ? '动漫' : '综艺';
   };
 
   const getActivePath = () => {
@@ -405,6 +411,7 @@ function DoubanPageClient() {
   const typeTabs = [
     { key: 'movie', label: '电影', icon: Film },
     { key: 'tv', label: '剧集', icon: Tv },
+    { key: 'animation', label: '动漫', icon: Film },
     { key: 'show', label: '综艺', icon: Tv },
   ];
 

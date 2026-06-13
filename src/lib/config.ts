@@ -26,8 +26,19 @@ const API_SITES: ApiSite[] = [
 
 /**
  * 获取所有可用视频源（纯客户端，同步）
+ * 会根据 localStorage 中的 enabledSources 过滤禁用的源
  */
 export function getAvailableApiSites(): ApiSite[] {
+  if (typeof window === 'undefined') return API_SITES;
+  try {
+    const raw = localStorage.getItem('enabledSources');
+    if (raw) {
+      const enabledKeys = new Set(JSON.parse(raw) as string[]);
+      if (enabledKeys.size > 0) {
+        return API_SITES.filter(s => enabledKeys.has(s.key));
+      }
+    }
+  } catch { /* ignore */ }
   return API_SITES;
 }
 

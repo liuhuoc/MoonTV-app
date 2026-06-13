@@ -25,6 +25,27 @@ function SearchPageClient() {
   // 记录上次搜索的关键词，防止侧滑返回时重复搜索
   const lastSearchedQueryRef = useRef<string>('');
 
+  const SEARCH_CACHE_KEY = 'moontv_search_cache';
+
+  const saveSearchCache = (query: string, results: any[]) => {
+    try {
+      sessionStorage.setItem(SEARCH_CACHE_KEY, JSON.stringify({ query, results, time: Date.now() }));
+    } catch { /* ignore */ }
+  };
+
+  const loadSearchCache = (): { query: string; results: any[] } | null => {
+    try {
+      const raw = sessionStorage.getItem(SEARCH_CACHE_KEY);
+      if (!raw) return null;
+      const cached = JSON.parse(raw);
+      if (Date.now() - cached.time > 5 * 60 * 1000) {
+        sessionStorage.removeItem(SEARCH_CACHE_KEY);
+        return null;
+      }
+      return cached;
+    } catch { return null; }
+  };
+
   const router = useRouter();
   const searchParams = useSearchParams();
   const [searchQuery, setSearchQuery] = useState('');
@@ -155,6 +176,16 @@ function SearchPageClient() {
         setSearchQuery(query);
         return;
       }
+      // 检查缓存，侧滑返回时直接从缓存恢复
+      const cached = loadSearchCache();
+      if (cached && cached.query === query) {
+        setSearchQuery(query);
+        setSearchResults(cached.results);
+        setShowResults(true);
+        lastSearchedQueryRef.current = query;
+        setIsLoading(false);
+        return;
+      }
       setSearchQuery(query);
       lastSearchedQueryRef.current = query;
       fetchSearchResults(query);
@@ -198,6 +229,7 @@ function SearchPageClient() {
       });
       setSearchResults(sorted);
       setShowResults(true);
+      saveSearchCache(query, sorted);
     } catch (error) {
       setSearchResults([]);
     } finally {

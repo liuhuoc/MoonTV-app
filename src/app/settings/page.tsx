@@ -522,6 +522,45 @@ export default function SettingsPage() {
                   </div>
                 </div>
 
+                {/* 一键检测 / 禁用失败源 */}
+                <div className='flex gap-2'>
+                  <button
+                    onClick={async () => {
+                      for (const source of allSources) {
+                        await handleTestSource(source);
+                      }
+                    }}
+                    className='flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border border-blue-300 dark:border-blue-700 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors text-xs font-medium'
+                  >
+                    <RefreshCw className='w-3 h-3' />
+                    一键检测全部
+                  </button>
+                  <button
+                    onClick={() => {
+                      const failed = new Set<string>();
+                      Object.entries(sourceStatuses).forEach(([key, status]) => {
+                        if (status.status === 'error') failed.add(key);
+                      });
+                      if (failed.size === 0) return;
+                      setEnabledSources(prev => {
+                        const next = new Set(prev);
+                        failed.forEach(k => next.delete(k));
+                        saveEnabledSources(next);
+                        return next;
+                      });
+                    }}
+                    disabled={!Object.values(sourceStatuses).some(s => s.status === 'error')}
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border transition-colors text-xs font-medium ${
+                      Object.values(sourceStatuses).some(s => s.status === 'error')
+                        ? 'border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20'
+                        : 'border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-600 cursor-not-allowed'
+                    }`}
+                  >
+                    <WifiOff className='w-3 h-3' />
+                    禁用全部失败源
+                  </button>
+                </div>
+
                 {/* 源列表 */}
                 <div className='space-y-1 max-h-[400px] overflow-y-auto pr-1'>
                   {allSources.map((source) => {

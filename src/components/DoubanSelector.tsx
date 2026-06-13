@@ -10,7 +10,7 @@ interface SelectorOption {
 }
 
 interface DoubanSelectorProps {
-  type: 'movie' | 'tv' | 'show';
+  type: 'movie' | 'tv' | 'show' | 'animation';
   primarySelection?: string;
   secondarySelection?: string;
   yearSelection?: string;
@@ -232,6 +232,81 @@ const DoubanSelector: React.FC<DoubanSelectorProps> = ({
               onSecondaryChange,
               'show'
             )}
+          </div>
+        </div>
+      )}
+
+      {/* 动漫类型 */}
+      {type === 'animation' && (
+        <div className='space-y-3 sm:space-y-4'>
+          <div className='flex flex-col sm:flex-row sm:items-center gap-2'>
+            <span className='text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400 min-w-[48px]'>
+              分类
+            </span>
+            <div className='w-full'>
+              {renderCapsuleSelector(
+                [
+                  { label: '热门', value: '热门' },
+                  { label: '全部', value: '全部' },
+                  { label: '动作', value: '动作' },
+                  { label: '科幻', value: '科幻' },
+                  { label: '奇幻', value: '奇幻' },
+                  { label: '冒险', value: '冒险' },
+                  { label: '喜剧', value: '喜剧' },
+                  { label: '剧情', value: '剧情' },
+                  { label: '悬疑', value: '悬疑' },
+                  { label: '热血', value: '热血' },
+                ],
+                primarySelection || '热门',
+                onPrimaryChange,
+                'animation-primary'
+              )}
+            </div>
+          </div>
+          <div className='flex flex-col sm:flex-row sm:items-center gap-2'>
+            <span className='text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400 min-w-[48px]'>
+              地区
+            </span>
+            <div className='w-full'>
+              {renderCapsuleSelector(
+                [
+                  { label: '全部', value: '全部' },
+                  { label: '日本', value: '日本' },
+                  { label: '大陆', value: '大陆' },
+                  { label: '美国', value: '美国' },
+                  { label: '韩国', value: '韩国' },
+                ],
+                secondarySelection || '全部',
+                onSecondaryChange,
+                'animation-secondary'
+              )}
+            </div>
+          </div>
+          <div className='flex flex-col sm:flex-row sm:items-center gap-2'>
+            <span className='text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400 min-w-[48px]'>
+              年份
+            </span>
+            <div className='w-full'>
+              {renderCapsuleSelector(
+                movieYearOptions,
+                yearSelection || movieYearOptions[0].value,
+                (value) => onYearChange?.(value),
+                'animation-year'
+              )}
+            </div>
+          </div>
+          <div className='flex flex-col sm:flex-row sm:items-center gap-2'>
+            <span className='text-xs sm:text-sm font-medium text-gray-600 dark:text-gray-400 min-w-[48px]'>
+              排序
+            </span>
+            <div className='w-full'>
+              {renderCapsuleSelector(
+                movieSortOptions,
+                sortSelection || movieSortOptions[0].value,
+                (value) => onSortChange?.(value),
+                'animation-sort'
+              )}
+            </div>
           </div>
         </div>
       )}

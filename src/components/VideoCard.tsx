@@ -240,7 +240,7 @@ export default function VideoCard({
         showProgress: true,
         showPlayButton: true,
         showHeart: true,
-        showCheckCircle: true,
+        showCheckCircle: false,
         showDoubanLink: false,
         showRating: false,
       },
@@ -291,8 +291,7 @@ export default function VideoCard({
             alt={actualTitle}
             fill
             className="object-cover transition-transform duration-500 ease-out group-hover:scale-105"
-            referrerPolicy="no-referrer"
-            onLoadingComplete={() => setIsLoading(true)}
+            onLoad={() => setIsLoading(true)}
             onError={() => {
               setHasError(true);
               setIsLoading(true);

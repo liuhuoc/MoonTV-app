@@ -28,6 +28,7 @@ function HomeClient() {
   const [hotMovies, setHotMovies] = useState<DoubanItem[]>([]);
   const [hotTvShows, setHotTvShows] = useState<DoubanItem[]>([]);
   const [hotVarietyShows, setHotVarietyShows] = useState<DoubanItem[]>([]);
+  const [hotAnimation, setHotAnimation] = useState<DoubanItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   // 收藏夹数据
@@ -58,9 +59,10 @@ function HomeClient() {
           }),
           getDoubanCategories({ kind: 'tv', category: 'tv', type: 'tv' }),
           getDoubanCategories({ kind: 'tv', category: 'show', type: 'show' }),
+          getDoubanCategories({ kind: 'movie', category: '热门', type: '日本' }),
         ]);
 
-        const [moviesResult, tvResult, varietyResult] = results;
+        const [moviesResult, tvResult, varietyResult, animationResult] = results;
 
         if (moviesResult.status === 'fulfilled' && moviesResult.value.code === 200) {
           setHotMovies(moviesResult.value.list);
@@ -81,6 +83,13 @@ function HomeClient() {
         } else {
           const varietyErr = varietyResult.status === 'rejected' ? varietyResult.reason : varietyResult.value?.message;
           console.warn('热门综艺加载失败:', varietyErr instanceof Error ? varietyErr.message : JSON.stringify(varietyErr));
+        }
+
+        if (animationResult.status === 'fulfilled' && animationResult.value.code === 200) {
+          setHotAnimation(animationResult.value.list);
+        } else {
+          const animationErr = animationResult.status === 'rejected' ? animationResult.reason : animationResult.value?.message;
+          console.warn('热门动漫加载失败:', animationErr instanceof Error ? animationErr.message : JSON.stringify(animationErr));
         }
       } catch (error) {
         const errMsg = error instanceof Error ? error.message : JSON.stringify(error);
@@ -287,6 +296,30 @@ function HomeClient() {
                       douban_id={show.id}
                       rate={show.rate}
                       year={show.year}
+                    />
+                  </div>
+                ))}
+          </ContentSection>
+
+          {/* 热门动漫 */}
+          <ContentSection title='热门动漫' href='/douban?type=animation'>
+            {loading
+              ? Array.from({ length: 8 }).map((_, index) => (
+                  <SkeletonCard key={index} />
+                ))
+              : hotAnimation.map((show, index) => (
+                  <div
+                    key={index}
+                    className='min-w-[120px] w-28 sm:min-w-[200px] sm:w-48'
+                  >
+                    <VideoCard
+                      from='douban'
+                      title={show.title}
+                      poster={show.poster}
+                      douban_id={show.id}
+                      rate={show.rate}
+                      year={show.year}
+                      type='movie'
                     />
                   </div>
                 ))}

@@ -250,6 +250,7 @@ export async function getDoubanCategories(
   const movieGenresFromSelector = new Set([
     '剧情', '喜剧', '爱情', '动作', '惊悚', '犯罪', '悬疑', '恐怖',
     '科幻', '奇幻', '传记', '战争', '家庭', '冒险', '人性', '青春',
+    '动画', '热血',
   ]);
   const movieRegionsFromSelector = new Set([
     '全部', '大陆', '美国', '香港', '台湾', '日本', '韩国', '英国',

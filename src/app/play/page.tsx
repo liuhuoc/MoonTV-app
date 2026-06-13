@@ -8,7 +8,7 @@ import Artplayer from 'artplayer';
 import Hls from 'hls.js';
 import { Heart, Download } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Suspense, useEffect, useRef, useState } from 'react';
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   deleteFavorite,
@@ -201,16 +201,14 @@ function PlayPageClient() {
   const [showDownloadSelector, setShowDownloadSelector] = useState(false);
   const [downloadSelections, setDownloadSelections] = useState<Set<number>>(new Set());
 
-  // 获取已下载的剧集索引列表
-  const getDownloadedEpisodes = (): Set<number> => {
-    const d = detailRef.current;
-    if (!d) return new Set();
-    const title = videoTitleRef.current || d.title || '';
-    const existingTasks = getDownloadTasks();
+  const downloadedEpisodes = useMemo(() => {
+    const d = detail;
+    if (!d || !d.episodes) return new Set<number>();
+    const title = videoTitle || d.title || '';
     const downloaded = new Set<number>();
     d.episodes.forEach((url, i) => {
       const label = d.episodes.length > 1 ? `第${i + 1}集` : '完整版';
-      const exists = existingTasks.find(t =>
+      const exists = downloadTasks.find(t =>
         t.url === url &&
         t.episodeLabel === label &&
         t.title === title &&
@@ -219,7 +217,7 @@ function PlayPageClient() {
       if (exists) downloaded.add(i);
     });
     return downloaded;
-  };
+  }, [detail, downloadTasks, videoTitle]);
 
   // 播放进度保存相关
   const saveIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -1255,12 +1253,13 @@ function PlayPageClient() {
     if (addedCount > 0) {
       Swal.mixin({
         toast: true,
-        position: 'top-end',
+        position: 'top',
         showConfirmButton: false,
-        timer: 2000,
+        timer: 2500,
         timerProgressBar: true,
         customClass: {
-          popup: '!bg-gray-900 !text-white !rounded-xl !shadow-2xl !border !border-gray-700',
+          popup: '!bg-gray-900 !text-white !rounded-2xl !shadow-2xl !border !border-gray-700 !px-6 !py-4',
+          title: '!text-sm !font-medium',
         },
       }).fire({
         icon: 'success',
@@ -1270,12 +1269,13 @@ function PlayPageClient() {
     } else if (skippedCount > 0) {
       Swal.mixin({
         toast: true,
-        position: 'top-end',
+        position: 'top',
         showConfirmButton: false,
-        timer: 2000,
+        timer: 2500,
         timerProgressBar: true,
         customClass: {
-          popup: '!bg-gray-900 !text-white !rounded-xl !shadow-2xl !border !border-gray-700',
+          popup: '!bg-gray-900 !text-white !rounded-2xl !shadow-2xl !border !border-gray-700 !px-6 !py-4',
+          title: '!text-sm !font-medium',
         },
       }).fire({
         icon: 'info',
@@ -2122,10 +2122,14 @@ function PlayPageClient() {
                         startDownload(task.id);
                         Swal.mixin({
                           toast: true,
-                          position: 'top-end',
+                          position: 'top',
                           showConfirmButton: false,
-                          timer: 2000,
+                          timer: 2500,
                           timerProgressBar: true,
+                          customClass: {
+                            popup: '!bg-gray-900 !text-white !rounded-2xl !shadow-2xl !border !border-gray-700 !px-6 !py-4',
+                            title: '!text-sm !font-medium',
+                          },
                         }).fire({
                           icon: 'success',
                           title: '已开始下载',
@@ -2133,10 +2137,14 @@ function PlayPageClient() {
                       } else {
                         Swal.mixin({
                           toast: true,
-                          position: 'top-end',
+                          position: 'top',
                           showConfirmButton: false,
-                          timer: 2000,
+                          timer: 2500,
                           timerProgressBar: true,
+                          customClass: {
+                            popup: '!bg-gray-900 !text-white !rounded-2xl !shadow-2xl !border !border-gray-700 !px-6 !py-4',
+                            title: '!text-sm !font-medium',
+                          },
                         }).fire({
                           icon: 'info',
                           title: '该影片已在下载列表中',
@@ -2347,7 +2355,6 @@ function PlayPageClient() {
 
       {/* 下载选集弹窗 */}
       {showDownloadSelector && detail && detail.episodes && detail.episodes.length > 0 && (() => {
-        const downloaded = getDownloadedEpisodes();
         return (
         <div className='fixed inset-0 z-[1000] flex items-center justify-center'>
           {/* 半透明背景遮罩 */}
@@ -2399,7 +2406,7 @@ function PlayPageClient() {
                   const episodeNum = index + 1;
                   const isCurrent = index === currentEpisodeIndex;
                   const isSelected = downloadSelections.has(index);
-                  const isDownloaded = downloaded.has(index);
+                  const isDownloaded = downloadedEpisodes.has(index);
                   const isDisabled = isDownloaded;
 
                   return (
