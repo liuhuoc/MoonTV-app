@@ -290,8 +290,12 @@ export default function VideoCard({
             alt={actualTitle}
             referrerPolicy="no-referrer"
             className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 ease-out group-hover:scale-105"
-            onLoad={() => setIsLoading(true)}
-            onError={() => {
+            onLoad={() => {
+              console.log('[VideoCard] 图片加载成功:', processImageUrl(actualPoster).substring(0, 80));
+              setIsLoading(true);
+            }}
+            onError={(e) => {
+              console.error('[VideoCard] 图片加载失败:', processImageUrl(actualPoster).substring(0, 80), 'title:', actualTitle?.substring(0, 20));
               setHasError(true);
               setIsLoading(true);
             }}

@@ -94,6 +94,7 @@ function PlayPageClient() {
   const [videoTitle, setVideoTitle] = useState(searchParams?.get('title') || '');
   const [videoYear, setVideoYear] = useState(searchParams?.get('year') || '');
   const [videoCover, setVideoCover] = useState('');
+  const [isLocalPlay, setIsLocalPlay] = useState(false);
   // 当前源和ID
   const [currentSource, setCurrentSource] = useState(
     searchParams?.get('source') || ''
@@ -690,6 +691,23 @@ function PlayPageClient() {
       // 防止重复初始化（侧滑返回时不再重新搜索）
       if (hasInitializedRef.current) return;
       hasInitializedRef.current = true;
+
+      // 本地文件播放：直接从下载任务获取文件路径
+      if (currentSource === 'local') {
+        const dlTasks = getDownloadTasks();
+        const dlTask = dlTasks.find(t => t.id === currentId);
+        if (dlTask?.localFileUri) {
+          setVideoUrl(dlTask.localFileUri);
+          setVideoTitle(dlTask.title || '');
+          setVideoCover(dlTask.poster || '');
+          setIsLocalPlay(true);
+          setLoading(false);
+          return;
+        }
+        setError('未找到已下载的文件');
+        setLoading(false);
+        return;
+      }
 
       if (!currentSource && !currentId && !videoTitle && !searchTitle) {
         setError('缺少必要参数');

@@ -129,6 +129,7 @@ function DoubanPageClient() {
         sort: sortSelection,
         pageLimit: pageSize,
         pageStart,
+        isAnimation: type === 'animation',
       };
     },
     [type, primarySelection, secondarySelection, yearSelection, sortSelection, pageSize]
@@ -156,6 +157,7 @@ function DoubanPageClient() {
           sort: sortSelection,
           pageLimit: remaining,
           pageStart: nextStart,
+          isAnimation: type === 'animation',
         });
 
         if (data.code !== 200) {

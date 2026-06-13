@@ -32,18 +32,23 @@ export function getImageProxyUrl(): string | null {
  * 处理图片 URL - 直接返回原 URL，豆瓣图片可直连
  */
 export function processImageUrl(originalUrl: string): string {
-  if (!originalUrl) return originalUrl;
+  if (!originalUrl) {
+    console.log('[图片处理] 空URL，跳过');
+    return originalUrl;
+  }
 
   const proxyUrl = getImageProxyUrl();
   if (proxyUrl) {
-    if (proxyUrl.includes('{url}') || proxyUrl.includes('%7Burl%7D')) {
-      return proxyUrl
+    const result = proxyUrl.includes('{url}') || proxyUrl.includes('%7Burl%7D')
+      ? proxyUrl
         .replace('{url}', encodeURIComponent(originalUrl))
-        .replace('%7Burl%7D', encodeURIComponent(originalUrl));
-    }
-    return `${proxyUrl}${encodeURIComponent(originalUrl)}`;
+        .replace('%7Burl%7D', encodeURIComponent(originalUrl))
+      : `${proxyUrl}${encodeURIComponent(originalUrl)}`;
+    console.log('[图片处理] 代理模式:', result.substring(0, 100));
+    return result;
   }
 
+  console.log('[图片处理] 直连:', originalUrl.substring(0, 100));
   return originalUrl;
 }
 

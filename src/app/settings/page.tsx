@@ -38,6 +38,7 @@ export default function SettingsPage() {
     host: string;
     status: 'ok' | 'error' | 'unknown';
     lastCheck: number;
+    latency?: number;
     errorMessage?: string;
   }
 
@@ -217,6 +218,7 @@ export default function SettingsPage() {
     setSourceStatuses({ ...statusesRef });
     saveSourceStatuses(statusesRef);
 
+    const startTime = Date.now();
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 8000);
@@ -226,18 +228,21 @@ export default function SettingsPage() {
         mode: 'cors',
       });
       clearTimeout(timeoutId);
+      const latency = Date.now() - startTime;
       if (resp.ok || resp.status > 0) {
         statusesRef[source.key] = {
           name: source.name,
           host,
           status: 'ok',
           lastCheck: Date.now(),
+          latency,
         };
       } else {
         throw new Error(`HTTP ${resp.status}`);
       }
     } catch (err) {
       try {
+        const t2 = Date.now();
         const controller2 = new AbortController();
         const timeoutId2 = setTimeout(() => controller2.abort(), 8000);
         await fetch(source.api, {
@@ -246,18 +251,22 @@ export default function SettingsPage() {
           mode: 'no-cors',
         });
         clearTimeout(timeoutId2);
+        const latency = Date.now() - t2;
         statusesRef[source.key] = {
           name: source.name,
           host,
           status: 'ok',
           lastCheck: Date.now(),
+          latency,
         };
       } catch {
+        const latency = Date.now() - startTime;
         statusesRef[source.key] = {
           name: source.name,
           host,
           status: 'error',
           lastCheck: Date.now(),
+          latency,
           errorMessage: '连接失败',
         };
       }
@@ -645,8 +654,10 @@ export default function SettingsPage() {
                               {status?.status === 'error' && status?.errorMessage && (
                                 <span className='text-red-500 ml-1'>- {status.errorMessage}</span>
                               )}
-                              {status?.status === 'ok' && status?.lastCheck > 0 && (
-                                <span className='text-green-500 ml-1'>- 连接正常</span>
+                              {status?.status === 'ok' && (
+                                <span className='text-green-500 ml-1'>
+                                  - {status.latency ? `${status.latency}ms` : '连接正常'}
+                                </span>
                               )}
                             </p>
                           </div>

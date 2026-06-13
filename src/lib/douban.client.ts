@@ -122,6 +122,7 @@ interface DoubanCategoriesParams {
   sort?: string;
   pageLimit?: number;
   pageStart?: number;
+  isAnimation?: boolean;
 }
 
 interface DoubanCategoryApiResponse {
@@ -273,7 +274,7 @@ export async function getDoubanCategories(
     'show_foreign': '国外综艺',
   };
 
-  const animationRegionTags: Record<string, string> = {
+  const animationRegionTags: Record<string, string | undefined> = {
     '全部': '',
     '日本': '日本动画',
     '大陆': '国产动画',
@@ -281,7 +282,9 @@ export async function getDoubanCategories(
   };
 
   const isAnimationFilter =
-    kind === 'movie' && animationRegionTags[type] !== undefined;
+    params.isAnimation === true &&
+    kind === 'movie' &&
+    animationRegionTags[type] !== undefined;
 
   const isTVShowFilter =
     (kind === 'tv' && (category === 'tv' || category === 'show')) ||
@@ -290,7 +293,7 @@ export async function getDoubanCategories(
   const isMovieTagsFilter =
     (kind === 'movie' || kind === 'tv') &&
     (category === '全部' || category === '热门' || movieGenresFromSelector.has(category)) &&
-    (kind === 'tv' || isAnimationFilter || movieRegionsFromSelector.has(type)) &&
+    (kind === 'tv' || movieRegionsFromSelector.has(type)) &&
     (!year || year === '全部' || movieYearsFromSelector.has(year));
 
   const isMovieSubjectCollection =

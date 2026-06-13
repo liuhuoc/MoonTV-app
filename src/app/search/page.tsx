@@ -194,11 +194,20 @@ function SearchPageClient() {
       const restore = () => {
         document.body.scrollTop = targetY;
         window.scrollTo(0, targetY);
+        if (document.documentElement) {
+          document.documentElement.scrollTop = targetY;
+        }
       };
-      restore();
-      setTimeout(restore, 100);
-      setTimeout(restore, 300);
-      setTimeout(restore, 600);
+      let attempts = 0;
+      const maxAttempts = 10;
+      const tryRestore = () => {
+        restore();
+        attempts++;
+        if (document.body.scrollTop !== targetY && window.scrollY !== targetY && attempts < maxAttempts) {
+          setTimeout(tryRestore, 100);
+        }
+      };
+      tryRestore();
     }
   }, [showResults, searchResults]);
 

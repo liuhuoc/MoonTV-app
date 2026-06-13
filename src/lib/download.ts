@@ -330,6 +330,13 @@ export async function startDownload(taskId: string): Promise<void> {
       status: 'failed',
       error: (error as Error).message || '下载失败',
     });
+    if (isCapacitor() && isHlsUrl(task.url)) {
+      const safeTitle = task.title.replace(/[/\\:*?"<>|]/g, '_').slice(0, 40);
+      const safeLabel = task.episodeLabel.replace(/[/\\:*?"<>|]/g, '_').slice(0, 20);
+      const dirPath = `Download/${safeTitle}/${safeLabel}`;
+      try { await Filesystem.rmdir({ path: dirPath, directory: Directory.Data, recursive: true }); } catch { /* ignore */ }
+      try { await Filesystem.rmdir({ path: dirPath, directory: Directory.ExternalStorage, recursive: true }); } catch { /* ignore */ }
+    }
   } finally {
     // 下载完成或失败后，尝试启动下一个等待中的任务
     activeAbortControllers.delete(taskId);
@@ -474,18 +481,61 @@ async function downloadHlsStream(taskId: string, playlistUrl: string, fileName: 
   if (!isCapacitor()) {
     updateDownloadTask(taskId, { speed: '正在合并片段...' });
     await mergeAndSaveBrowser(taskId, segments.length, fileName);
-  } else {
-    // Capacitor 环境：文件已逐个保存，标记完成
-    updateDownloadTask(taskId, {
-      status: 'completed',
-      progress: 100,
-      downloadedBytes: totalDownloaded,
-      totalBytes: totalDownloaded,
-      speed: '完成',
-      localPath: `file://${dirPath}`,
-      localFileUri: `file://${dirPath}`,
-    });
+    return;
   }
+
+  // Capacitor 环境：生成本地 m3u8 播放列表指向已保存的片段
+  updateDownloadTask(taskId, { speed: '生成播放列表...' });
+
+  const segFilePaths = Array.from({ length: segments.length }, (_, i) =>
+    `seg${String(i + 1).padStart(5, '0')}.ts`
+  );
+
+  const m3u8Content = [
+    '#EXTM3U',
+    '#EXT-X-VERSION:3',
+    `#EXT-X-TARGETDURATION:10`,
+    '#EXT-X-MEDIA-SEQUENCE:0',
+    '#EXT-X-PLAYLIST-TYPE:VOD',
+    ...segFilePaths.map((seg, i) => [
+      `#EXTINF:10.0,`,
+      seg,
+    ].join('\n')),
+    '#EXT-X-ENDLIST',
+  ].join('\n');
+
+  const m3u8Path = `${dirPath}/playlist.m3u8`;
+
+  try {
+    await Filesystem.writeFile({
+      path: m3u8Path,
+      data: m3u8Content,
+      directory: Directory.Data,
+      recursive: true,
+    });
+  } catch {
+    try {
+      await Filesystem.writeFile({
+        path: m3u8Path,
+        data: m3u8Content,
+        directory: Directory.ExternalStorage,
+        recursive: true,
+      });
+    } catch (e) {
+      throw new Error(`保存播放列表失败: ${(e as Error).message}`);
+    }
+  }
+
+  const finalPath = `file://${dirPath}/playlist.m3u8`;
+  updateDownloadTask(taskId, {
+    status: 'completed',
+    progress: 100,
+    downloadedBytes: totalDownloaded,
+    totalBytes: totalDownloaded,
+    speed: '完成',
+    localPath: finalPath,
+    localFileUri: finalPath,
+  });
 }
 
 /** 下载单个片段 */
