@@ -391,35 +391,17 @@ export async function startDownload(taskId: string): Promise<void> {
     const fileName = `${safeTitle}_${safeLabel}.ts`;
 
     if (isHlsUrl(url)) {
-      // HLS 流：下载所有 ts 片段并合并
       await downloadHlsStream(taskId, url, fileName, controller.signal);
     } else if (isCapacitor()) {
-      // Capacitor 环境：直接下载
       await downloadDirectCapacitor(taskId, url, fileName, controller.signal);
     } else {
-      // 浏览器环境：使用 XMLHttpRequest 获取进度
       await downloadWithProgress(taskId, url, fileName, controller.signal);
-    }
-
-    // 下载成功：自动清理缓存（如果设置开启）
-    if (getDownloadSettings().autoCleanup) {
-      try {
-        await cleanupTaskFiles(taskId);
-      } catch {
-        // cleanupTaskFiles 自身已有错误处理，此处兜底忽略
-      }
     }
   } catch (error) {
     updateDownloadTask(taskId, {
       status: 'failed',
       error: (error as Error).message || '下载失败',
     });
-    // 下载失败时清理可能残留的临时文件
-    try {
-      await cleanupTaskFiles(taskId);
-    } catch {
-      // cleanupTaskFiles 自身已有错误处理，此处兜底忽略
-    }
   } finally {
     // 下载完成或失败后，尝试启动下一个等待中的任务
     activeAbortControllers.delete(taskId);

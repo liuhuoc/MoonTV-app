@@ -43,6 +43,13 @@ export function getAvailableApiSites(): ApiSite[] {
 }
 
 /**
+ * 获取全部视频源（不过滤，用于设置页面源管理）
+ */
+export function getAllApiSites(): ApiSite[] {
+  return API_SITES;
+}
+
+/**
  * 获取站点名称
  */
 export function getSiteName(): string {

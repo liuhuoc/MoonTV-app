@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 import PageLayout from '@/components/PageLayout';
-import { getAvailableApiSites } from '@/lib/config';
+import { getAllApiSites } from '@/lib/config';
 import type { ApiSite } from '@/lib/downstream';
 import { getDownloadSettings, saveDownloadSettings } from '@/lib/settings';
 
@@ -41,7 +41,7 @@ export default function SettingsPage() {
     errorMessage?: string;
   }
 
-  const allApiSites = getAvailableApiSites();
+  const allApiSites = getAllApiSites();
 
   function getEnabledSources(): Set<string> {
     if (typeof window === 'undefined') return new Set(allApiSites.map(s => s.key));
@@ -197,7 +197,7 @@ export default function SettingsPage() {
   };
 
   const handleTestSource = async (source: ApiSite) => {
-    const host = source.api ? new URL(source.api).hostname : '';
+    const host = source.api ? (() => { try { return new URL(source.api).hostname; } catch { return source.api; } })() : '';
     const statuses = { ...sourceStatuses };
     statuses[source.key] = {
       name: source.name,
@@ -210,11 +210,11 @@ export default function SettingsPage() {
 
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      const timeoutId = setTimeout(() => controller.abort(), 6000);
       await fetch(source.api, {
-        method: 'HEAD',
+        method: 'GET',
         signal: controller.signal,
-        mode: 'no-cors',
+        headers: { 'Accept': 'application/json' },
       });
       clearTimeout(timeoutId);
       statuses[source.key] = {

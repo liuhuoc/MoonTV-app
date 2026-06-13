@@ -51,13 +51,9 @@ export function processImageUrl(originalUrl: string): string {
   const hostname = parsedUrl.hostname.toLowerCase();
   const isDoubanImage =
     hostname.endsWith('doubanio.com') || hostname.endsWith('douban.com');
-  const isDevelopment =
-    window.location.hostname === 'localhost' ||
-    window.location.hostname === '127.0.0.1' ||
-    window.location.port === '3000';
 
-  if (isDevelopment && isDoubanImage) {
-    return `/api/image-proxy/?url=${encodeURIComponent(originalUrl)}`;
+  if (isDoubanImage) {
+    return `https://api.allorigins.win/raw?url=${encodeURIComponent(originalUrl)}`;
   }
 
   return originalUrl;

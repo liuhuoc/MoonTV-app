@@ -22,7 +22,6 @@ function DownloadPageClient() {
   useEffect(() => {
     setTasks(getDownloadTasks());
     const unsubscribe = subscribeToDownloadUpdates(setTasks);
-    cleanupOrphanedDownloads().catch(() => { /* 忽略 */ });
     return unsubscribe;
   }, []);
 

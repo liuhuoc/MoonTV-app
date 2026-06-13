@@ -211,8 +211,7 @@ function PlayPageClient() {
       const exists = downloadTasks.find(t =>
         t.url === url &&
         t.episodeLabel === label &&
-        t.title === title &&
-        t.status !== 'failed'
+        t.title === title
       );
       if (exists) downloaded.add(i);
     });
@@ -1227,12 +1226,11 @@ function PlayPageClient() {
       const url = d.episodes[index];
       const label = d.episodes.length > 1 ? `第${index + 1}集` : '完整版';
 
-      // 跳过已下载且未失败的任务
+      // 跳过已存在的任务
       const exists = existingTasks.find(t =>
         t.url === url &&
         t.episodeLabel === label &&
-        t.title === title &&
-        t.status !== 'failed'
+        t.title === title
       );
       if (exists) {
         skippedCount++;
@@ -2109,7 +2107,7 @@ function PlayPageClient() {
                       const t = videoTitleRef.current || detailRef.current?.title || '未知';
                       const existingTasks = getDownloadTasks();
                       const exists = existingTasks.find(
-                        et => et.url === currentUrl && et.title === t && et.status !== 'failed'
+                        et => et.url === currentUrl && et.title === t
                       );
                       if (!exists) {
                         const task = addDownloadTask({

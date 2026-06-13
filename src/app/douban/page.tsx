@@ -2,7 +2,7 @@
 
 'use client';
 
-import { Film, Loader2, Tv } from 'lucide-react';
+import { Clapperboard, Film, Loader2, MonitorPlay, Tv } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense } from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -406,13 +406,13 @@ function DoubanPageClient() {
     return activePath;
   };
 
-  const TitleIcon = type === 'movie' ? Film : Tv;
+  const TitleIcon = type === 'movie' ? Film : type === 'animation' ? Clapperboard : Tv;
 
   const typeTabs = [
     { key: 'movie', label: '电影', icon: Film },
     { key: 'tv', label: '剧集', icon: Tv },
-    { key: 'animation', label: '动漫', icon: Film },
-    { key: 'show', label: '综艺', icon: Tv },
+    { key: 'animation', label: '动漫', icon: Clapperboard },
+    { key: 'show', label: '综艺', icon: MonitorPlay },
   ];
 
   return (
@@ -442,7 +442,7 @@ function DoubanPageClient() {
                 <button
                   key={tab.key}
                   onClick={() => handleTypeSwitch(tab.key)}
-                  className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-medium transition-all ${
+                  className={`flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-medium transition-all ${
                     isActive
                       ? 'bg-green-500 text-white shadow-lg shadow-green-500/25'
                       : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'

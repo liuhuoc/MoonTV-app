@@ -29,11 +29,11 @@ function SearchPageClient() {
 
   const saveSearchCache = (query: string, results: any[]) => {
     try {
-      sessionStorage.setItem(SEARCH_CACHE_KEY, JSON.stringify({ query, results, time: Date.now() }));
+      sessionStorage.setItem(SEARCH_CACHE_KEY, JSON.stringify({ query, results, time: Date.now(), scrollY: window.scrollY || document.body.scrollTop || 0 }));
     } catch { /* ignore */ }
   };
 
-  const loadSearchCache = (): { query: string; results: any[] } | null => {
+  const loadSearchCache = (): { query: string; results: any[]; scrollY: number } | null => {
     try {
       const raw = sessionStorage.getItem(SEARCH_CACHE_KEY);
       if (!raw) return null;
@@ -184,6 +184,12 @@ function SearchPageClient() {
         setShowResults(true);
         lastSearchedQueryRef.current = query;
         setIsLoading(false);
+        requestAnimationFrame(() => {
+          if (cached.scrollY > 0) {
+            window.scrollTo(0, cached.scrollY);
+            document.body.scrollTop = cached.scrollY;
+          }
+        });
         return;
       }
       setSearchQuery(query);
