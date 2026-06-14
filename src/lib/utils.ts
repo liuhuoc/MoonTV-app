@@ -1,6 +1,42 @@
 /* eslint-disable @typescript-eslint/no-explicit-any,no-console */
 
 import Hls from 'hls.js';
+import { CapacitorHttp } from '@capacitor/core';
+
+/**
+ * 检查是否在 Capacitor 环境
+ */
+function isCapacitorEnv(): boolean {
+  try {
+    return typeof CapacitorHttp !== 'undefined' && typeof CapacitorHttp.request === 'function';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 用 CapacitorHttp 获取图片并转为 data URL（绕过设备 SSL 证书问题）
+ */
+export async function fetchImageAsDataUrl(imageUrl: string): Promise<string> {
+  try {
+    const resp = await CapacitorHttp.request({
+      url: imageUrl,
+      method: 'GET',
+      responseType: 'blob',
+      connectTimeout: 10000,
+      readTimeout: 15000,
+    });
+    if (resp.status < 200 || resp.status >= 300 || !resp.data) {
+      throw new Error(`HTTP ${resp.status}`);
+    }
+    const base64 = resp.data as string;
+    const ext = imageUrl.match(/\.(webp|jpg|jpeg|png|gif)(\?|$)/i)?.[1] || 'webp';
+    return `data:image/${ext === 'jpg' ? 'jpeg' : ext};base64,${base64}`;
+  } catch (e) {
+    console.error('[图片CapacitorHttp] 获取失败:', imageUrl.substring(0, 80), e);
+    throw e;
+  }
+}
 
 /**
  * 获取图片代理 URL 设置

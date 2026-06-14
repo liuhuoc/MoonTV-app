@@ -13,7 +13,7 @@ import {
   subscribeToDataUpdates,
 } from '@/lib/db.client';
 import { SearchResult } from '@/lib/types';
-import { processImageUrl } from '@/lib/utils';
+import { fetchImageAsDataUrl, processImageUrl } from '@/lib/utils';
 
 import { ImagePlaceholder } from '@/components/ImagePlaceholder';
 
@@ -58,6 +58,13 @@ export default function VideoCard({
   const [favorited, setFavorited] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [hasError, setHasError] = useState(false);
+  const [capacitorImageUrl, setCapacitorImageUrl] = useState('');
+
+  // 切换海报时重置错误状态
+  useEffect(() => {
+    setHasError(false);
+    setCapacitorImageUrl('');
+  }, [actualPoster]);
 
   const isAggregate = from === 'search' && !!items?.length;
 
@@ -143,6 +150,27 @@ export default function VideoCard({
 
     return unsubscribe;
   }, [from, actualSource, actualId]);
+
+  // 图片加载失败时通过 CapacitorHttp 重试（绕过设备 SSL 证书问题）
+  useEffect(() => {
+    if (!hasError || !actualPoster) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const dataUrl = await fetchImageAsDataUrl(actualPoster);
+        if (!cancelled) {
+          setCapacitorImageUrl(dataUrl);
+          setHasError(false);
+          setIsLoading(true);
+        }
+      } catch {
+        if (!cancelled) {
+          // CapacitorHttp 也失败了，保持 hasError=true 显示占位图
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [hasError, actualPoster]);
 
   const handleToggleFavorite = useCallback(
     async (e: React.MouseEvent) => {
@@ -284,9 +312,9 @@ export default function VideoCard({
         {/* 骨架屏 */}
         {!isLoading && <ImagePlaceholder aspectRatio="aspect-[2/3]" />}
         {/* 图片 */}
-        {!hasError ? (
+        {!hasError || capacitorImageUrl ? (
           <img
-            src={processImageUrl(actualPoster)}
+            src={capacitorImageUrl || processImageUrl(actualPoster)}
             alt={actualTitle}
             referrerPolicy="no-referrer"
             className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 ease-out group-hover:scale-105"

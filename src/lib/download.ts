@@ -406,6 +406,28 @@ async function downloadHlsStream(taskId: string, playlistUrl: string, fileName: 
   const safeLabel = (task?.episodeLabel || 'episode').replace(/[/\\:*?"<>|]/g, '_').slice(0, 20);
   const dirPath = `Download/${safeTitle}/${safeLabel}`;
 
+  // 确定写入目录
+  let writeDir = Directory.Data;
+  try {
+    await Filesystem.mkdir({ path: dirPath, directory: Directory.Data, recursive: true });
+  } catch {
+    await Filesystem.mkdir({ path: dirPath, directory: Directory.ExternalStorage, recursive: true });
+    writeDir = Directory.ExternalStorage;
+  }
+
+  // 获取目录的绝对文件路径用于 m3u8
+  let baseFileUri = '';
+  try {
+    const uriResult = await Filesystem.getUri({ path: dirPath, directory: writeDir });
+    baseFileUri = uriResult.uri;
+    if (!baseFileUri.endsWith('/')) baseFileUri += '/';
+  } catch {
+    // getUri 可能失败，回退到构造路径
+    baseFileUri = `file:///${dirPath}/`;
+  }
+
+  const segFilePaths: string[] = [];
+
   for (let i = 0; i < segments.length; i++) {
     const segUrl = segments[i];
     const segIndex = i + 1;
@@ -442,27 +464,16 @@ async function downloadHlsStream(taskId: string, playlistUrl: string, fileName: 
     if (isCapacitor()) {
       const arrayBuffer = await blob.arrayBuffer();
       const base64 = arrayBufferToBase64(arrayBuffer);
-      const segFilePath = `${dirPath}/seg${String(segIndex).padStart(5, '0')}.ts`;
+      const segRelPath = `${dirPath}/seg${String(segIndex).padStart(5, '0')}.ts`;
 
-      try {
-        await Filesystem.writeFile({
-          path: segFilePath,
-          data: base64,
-          directory: Directory.Data,
-          recursive: true,
-        });
-      } catch {
-        try {
-          await Filesystem.writeFile({
-            path: segFilePath,
-            data: base64,
-            directory: Directory.ExternalStorage,
-            recursive: true,
-          });
-        } catch (e) {
-          throw new Error(`保存片段失败: ${(e as Error).message}`);
-        }
-      }
+      await Filesystem.writeFile({
+        path: segRelPath,
+        data: base64,
+        directory: writeDir,
+        recursive: true,
+      });
+
+      segFilePaths.push(baseFileUri + `seg${String(segIndex).padStart(5, '0')}.ts`);
     } else {
       // 浏览器环境：保存到 IndexedDB
       await saveSegmentToIndexedDB(taskId, segIndex, blob);
@@ -487,46 +498,29 @@ async function downloadHlsStream(taskId: string, playlistUrl: string, fileName: 
   // Capacitor 环境：生成本地 m3u8 播放列表指向已保存的片段
   updateDownloadTask(taskId, { speed: '生成播放列表...' });
 
-  const segFilePaths = Array.from({ length: segments.length }, (_, i) =>
-    `seg${String(i + 1).padStart(5, '0')}.ts`
-  );
-
   const playlistContent = [
     '#EXTM3U',
     '#EXT-X-VERSION:3',
-    `#EXT-X-TARGETDURATION:10`,
+    '#EXT-X-TARGETDURATION:10',
     '#EXT-X-MEDIA-SEQUENCE:0',
     '#EXT-X-PLAYLIST-TYPE:VOD',
-    ...segFilePaths.map((seg) => [
-      `#EXTINF:10.0,`,
-      seg,
+    ...segFilePaths.map((segUri) => [
+      '#EXTINF:10.0,',
+      segUri,
     ].join('\n')),
     '#EXT-X-ENDLIST',
   ].join('\n');
 
   const m3u8Path = `${dirPath}/playlist.m3u8`;
 
-  try {
-    await Filesystem.writeFile({
-      path: m3u8Path,
-      data: playlistContent,
-      directory: Directory.Data,
-      recursive: true,
-    });
-  } catch {
-    try {
-      await Filesystem.writeFile({
-        path: m3u8Path,
-        data: playlistContent,
-        directory: Directory.ExternalStorage,
-        recursive: true,
-      });
-    } catch (e) {
-      throw new Error(`保存播放列表失败: ${(e as Error).message}`);
-    }
-  }
+  await Filesystem.writeFile({
+    path: m3u8Path,
+    data: playlistContent,
+    directory: writeDir,
+    recursive: true,
+  });
 
-  const finalPath = `file://${dirPath}/playlist.m3u8`;
+  const finalPath = baseFileUri + 'playlist.m3u8';
   updateDownloadTask(taskId, {
     status: 'completed',
     progress: 100,
