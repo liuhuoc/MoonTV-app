@@ -4,17 +4,6 @@ import Hls from 'hls.js';
 import { CapacitorHttp } from '@capacitor/core';
 
 /**
- * 检查是否在 Capacitor 环境
- */
-function isCapacitorEnv(): boolean {
-  try {
-    return typeof CapacitorHttp !== 'undefined' && typeof CapacitorHttp.request === 'function';
-  } catch {
-    return false;
-  }
-}
-
-/**
  * 用 CapacitorHttp 获取图片并转为 data URL（绕过设备 SSL 证书问题）
  */
 export async function fetchImageAsDataUrl(imageUrl: string): Promise<string> {

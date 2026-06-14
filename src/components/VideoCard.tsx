@@ -60,12 +60,6 @@ export default function VideoCard({
   const [hasError, setHasError] = useState(false);
   const [capacitorImageUrl, setCapacitorImageUrl] = useState('');
 
-  // 切换海报时重置错误状态
-  useEffect(() => {
-    setHasError(false);
-    setCapacitorImageUrl('');
-  }, [actualPoster]);
-
   const isAggregate = from === 'search' && !!items?.length;
 
   const aggregateData = useMemo(() => {
@@ -105,6 +99,13 @@ export default function VideoCard({
 
   const actualTitle = aggregateData?.first.title ?? title;
   const actualPoster = aggregateData?.first.poster ?? poster;
+
+  // 切换海报时重置错误状态
+  useEffect(() => {
+    setHasError(false);
+    setCapacitorImageUrl('');
+  }, [poster]);
+
   const actualSource = aggregateData?.first.source ?? source;
   const actualId = aggregateData?.first.id ?? id;
   const actualDoubanIdRaw = aggregateData?.mostFrequentDoubanId ?? douban_id;
