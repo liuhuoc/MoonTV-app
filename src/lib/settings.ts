@@ -5,11 +5,13 @@ const DOWNLOAD_SETTINGS_KEY = 'downloadSettings';
 export interface DownloadSettings {
   maxConcurrent: number;
   autoCleanup: boolean;
+  downloadThreads: number;
 }
 
 const DEFAULT_DOWNLOAD_SETTINGS: DownloadSettings = {
   maxConcurrent: 2,
   autoCleanup: true,
+  downloadThreads: 3,
 };
 
 export function getDownloadSettings(): DownloadSettings {
@@ -21,6 +23,7 @@ export function getDownloadSettings(): DownloadSettings {
       return {
         maxConcurrent: Math.max(1, Math.min(5, parsed.maxConcurrent || 2)),
         autoCleanup: !!parsed.autoCleanup,
+        downloadThreads: Math.max(1, Math.min(10, parsed.downloadThreads || 3)),
       };
     }
   } catch { /* ignore */ }

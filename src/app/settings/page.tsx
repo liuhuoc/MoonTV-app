@@ -6,7 +6,8 @@ import { useEffect, useRef, useState } from 'react';
 
 import PageLayout from '@/components/PageLayout';
 import { getAllApiSites } from '@/lib/config';
-import type { ApiSite } from '@/lib/downstream';
+import { searchFromApi, type ApiSite } from '@/lib/downstream';
+import { getVideoResolutionFromM3u8 } from '@/lib/utils';
 import { getDownloadSettings, saveDownloadSettings } from '@/lib/settings';
 
 export default function SettingsPage() {
@@ -23,6 +24,7 @@ export default function SettingsPage() {
   // 下载设置
   const [maxConcurrent, setMaxConcurrent] = useState(2);
   const [autoCleanup, setAutoCleanup] = useState(true);
+  const [downloadThreads, setDownloadThreads] = useState(3);
 
   // 折叠面板状态
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['search', 'play', 'download', 'source', 'proxy']));
@@ -39,6 +41,8 @@ export default function SettingsPage() {
     lastCheck: number;
     latency?: number;
     errorMessage?: string;
+    quality?: string;
+    loadSpeed?: string;
   }
 
   const allApiSites = getAllApiSites();
@@ -123,6 +127,7 @@ export default function SettingsPage() {
     const dlSettings = getDownloadSettings();
     setMaxConcurrent(dlSettings.maxConcurrent);
     setAutoCleanup(dlSettings.autoCleanup);
+    setDownloadThreads(dlSettings.downloadThreads);
 
     const enabled = getEnabledSources();
     setEnabledSources(enabled);
@@ -161,6 +166,7 @@ export default function SettingsPage() {
     setImageProxyUrl('');
     setMaxConcurrent(2);
     setAutoCleanup(true);
+    setDownloadThreads(3);
 
     if (typeof window !== 'undefined') {
       localStorage.setItem('enableOptimization', JSON.stringify(true));
@@ -168,7 +174,7 @@ export default function SettingsPage() {
       localStorage.setItem('enableDoubanProxy', JSON.stringify(false));
       localStorage.setItem('enableImageProxy', JSON.stringify(false));
       localStorage.setItem('imageProxyUrl', '');
-      saveDownloadSettings({ maxConcurrent: 2, autoCleanup: true });
+      saveDownloadSettings({ maxConcurrent: 2, autoCleanup: true, downloadThreads: 3 });
       saveEnabledSources(new Set(allApiSites.map(s => s.key)));
       saveSourceStatuses({});
       saveCustomSources([]);
@@ -212,56 +218,52 @@ export default function SettingsPage() {
     setSourceStatuses({ ...statusesRef });
     saveSourceStatuses(statusesRef);
 
-    const startTime = Date.now();
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000);
-      const resp = await fetch(source.api, {
-        method: 'GET',
-        signal: controller.signal,
-        mode: 'cors',
-      });
-      clearTimeout(timeoutId);
-      const latency = Date.now() - startTime;
-      if (resp.ok || resp.status > 0) {
-        statusesRef[source.key] = {
-          name: source.name,
-          host,
-          status: 'ok',
-          lastCheck: Date.now(),
-          latency,
-        };
-      } else {
-        throw new Error(`HTTP ${resp.status}`);
+      // 与播放页换源逻辑一致：搜索关键字 → 取第一个结果的 M3U8 链接 → 测速
+      const searchResults = await searchFromApi(source, '三体');
+      if (!searchResults || searchResults.length === 0) {
+        throw new Error('无搜索结果');
       }
+
+      const firstEpUrl = searchResults[0].episodes?.[0];
+      if (!firstEpUrl) {
+        throw new Error('无播放链接');
+      }
+
+      const testResult = await getVideoResolutionFromM3u8(firstEpUrl);
+
+      statusesRef[source.key] = {
+        name: source.name,
+        host,
+        status: 'ok',
+        lastCheck: Date.now(),
+        latency: testResult.pingTime,
+        quality: testResult.quality,
+        loadSpeed: testResult.loadSpeed,
+      };
     } catch (err) {
+      // 回退到简单的 HTTP 连通性测试
+      const startTime = Date.now();
       try {
-        const t2 = Date.now();
-        const controller2 = new AbortController();
-        const timeoutId2 = setTimeout(() => controller2.abort(), 8000);
-        await fetch(source.api, {
-          method: 'GET',
-          signal: controller2.signal,
-          mode: 'no-cors',
-        });
-        clearTimeout(timeoutId2);
-        const latency = Date.now() - t2;
-        statusesRef[source.key] = {
-          name: source.name,
-          host,
-          status: 'ok',
-          lastCheck: Date.now(),
-          latency,
-        };
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 8000);
+        const resp = await fetch(source.api, { method: 'GET', signal: controller.signal, mode: 'cors' });
+        clearTimeout(timeoutId);
+        if (resp.ok || resp.status > 0) {
+          statusesRef[source.key] = {
+            name: source.name, host,
+            status: 'ok', lastCheck: Date.now(),
+            latency: Date.now() - startTime,
+          };
+        } else {
+          throw new Error(`HTTP ${resp.status}`);
+        }
       } catch {
         const latency = Date.now() - startTime;
         statusesRef[source.key] = {
-          name: source.name,
-          host,
-          status: 'error',
-          lastCheck: Date.now(),
-          latency,
-          errorMessage: '连接失败',
+          name: source.name, host,
+          status: 'error', lastCheck: Date.now(),
+          latency, errorMessage: '连接失败',
         };
       }
     }
@@ -452,7 +454,7 @@ export default function SettingsPage() {
                       onClick={() => {
                         const v = Math.max(1, maxConcurrent - 1);
                         setMaxConcurrent(v);
-                        saveDownloadSettings({ maxConcurrent: v, autoCleanup });
+                        saveDownloadSettings({ maxConcurrent: v, autoCleanup, downloadThreads });
                       }}
                       className='w-8 h-8 rounded-full border border-gray-300 dark:border-gray-600 flex items-center justify-center text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors'
                     >-</button>
@@ -461,7 +463,7 @@ export default function SettingsPage() {
                       onClick={() => {
                         const v = Math.min(5, maxConcurrent + 1);
                         setMaxConcurrent(v);
-                        saveDownloadSettings({ maxConcurrent: v, autoCleanup });
+                        saveDownloadSettings({ maxConcurrent: v, autoCleanup, downloadThreads });
                       }}
                       className='w-8 h-8 rounded-full border border-gray-300 dark:border-gray-600 flex items-center justify-center text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors'
                     >+</button>
@@ -471,11 +473,36 @@ export default function SettingsPage() {
                   checked={autoCleanup}
                   onChange={(v) => {
                     setAutoCleanup(v);
-                    saveDownloadSettings({ maxConcurrent, autoCleanup: v });
+                    saveDownloadSettings({ maxConcurrent, autoCleanup: v, downloadThreads });
                   }}
                   label='下载完成后自动清理缓存'
                   description='下载完成后自动清理临时 ts 片段文件'
                 />
+                <div className='flex items-center justify-between'>
+                  <div>
+                    <h4 className='text-sm font-medium text-gray-700 dark:text-gray-300'>下载线程数</h4>
+                    <p className='text-xs text-gray-500 dark:text-gray-400 mt-1'>同时下载的视频片段数（1-10）</p>
+                  </div>
+                  <div className='flex items-center gap-2'>
+                    <button
+                      onClick={() => {
+                        const v = Math.max(1, downloadThreads - 1);
+                        setDownloadThreads(v);
+                        saveDownloadSettings({ maxConcurrent, autoCleanup, downloadThreads: v });
+                      }}
+                      className='w-8 h-8 rounded-full border border-gray-300 dark:border-gray-600 flex items-center justify-center text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors'
+                    >-</button>
+                    <span className='w-8 text-center text-sm font-medium text-gray-700 dark:text-gray-300'>{downloadThreads}</span>
+                    <button
+                      onClick={() => {
+                        const v = Math.min(10, downloadThreads + 1);
+                        setDownloadThreads(v);
+                        saveDownloadSettings({ maxConcurrent, autoCleanup, downloadThreads: v });
+                      }}
+                      className='w-8 h-8 rounded-full border border-gray-300 dark:border-gray-600 flex items-center justify-center text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors'
+                    >+</button>
+                  </div>
+                </div>
               </div>
             )}
 
@@ -641,7 +668,9 @@ export default function SettingsPage() {
                               )}
                               {status?.status === 'ok' && (
                                 <span className='text-green-500 ml-1'>
-                                  - {status.latency ? `${status.latency}ms` : '连接正常'}
+                                  {status.quality ? `${status.quality} ` : ''}
+                                  {status.loadSpeed ? `${status.loadSpeed} ` : ''}
+                                  {status.latency ? `${status.latency}ms` : '连接正常'}
                                 </span>
                               )}
                             </p>

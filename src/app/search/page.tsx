@@ -12,10 +12,56 @@ import {
   getSearchHistory,
   subscribeToDataUpdates,
 } from '@/lib/db.client';
-import { downstreamSearch, downstreamSearchFast } from '@/lib/downstream';
+import { searchFromApi, type SearchResult } from '@/lib/downstream';
+import { getAvailableApiSites } from '@/lib/config';
+import { processImageUrl } from '@/lib/utils';
 
 import PageLayout from '@/components/PageLayout';
-import VideoCard from '@/components/VideoCard';
+
+function ResultRow({ item, query, onClick }: { item: SearchResult; query: string; onClick: () => void }) {
+  const title = item.title;
+  const poster = item.poster;
+  const year = item.year && item.year !== 'unknown' ? item.year : '';
+  const typeName = item.type_name || '';
+  const epCount = item.episodes?.length || 0;
+  const sourceName = item.source_name || '';
+  const desc = item.desc || '';
+  const truncatedDesc = desc.length > 80 ? desc.slice(0, 80) + '...' : desc;
+
+  return (
+    <div
+      onClick={onClick}
+      className='flex gap-3 p-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/10 cursor-pointer transition-all duration-200'
+    >
+      <div className='w-16 h-[5.5rem] shrink-0 rounded-lg overflow-hidden bg-gray-800'>
+        {poster ? (
+          <img src={processImageUrl(poster)} alt={title} referrerPolicy='origin' className='w-full h-full object-cover' />
+        ) : (
+          <div className='w-full h-full flex items-center justify-center text-gray-600'>
+            <svg className='w-6 h-6' fill='none' viewBox='0 0 24 24' stroke='currentColor' strokeWidth={1}><path strokeLinecap='round' strokeLinejoin='round' d='M15.182 15.182a4.5 4.5 0 01-6.364 0M21 12a9 9 0 11-18 0 9 9 0 0118 0zM9.75 9.75c0 .414-.168.75-.375.75S9 10.164 9 9.75 9.168 9 9.375 9s.375.336.375.75zm-.375 0h.008v.015h-.008V9.75zm5.625 0c0 .414-.168.75-.375.75s-.375-.336-.375-.75.168-.75.375-.75.375.336.375.75zm-.375 0h.008v.015h-.008V9.75z'/></svg>
+          </div>
+        )}
+      </div>
+      <div className='flex-1 min-w-0 flex flex-col justify-center gap-1'>
+        <div className='flex items-center gap-2'>
+          <h4 className='text-sm font-medium text-gray-200 truncate'>{title}</h4>
+          {sourceName && (
+            <span className='text-[10px] px-1.5 py-0.5 rounded bg-green-500/10 text-green-400 shrink-0'>{sourceName}</span>
+          )}
+        </div>
+        <div className='flex items-center gap-2 text-xs text-gray-500'>
+          {year && <span>{year}</span>}
+          {typeName && <span className='px-1 py-0.5 rounded bg-white/5'>{typeName}</span>}
+          {epCount > 0 && <span>{epCount}集</span>}
+          {query && title !== query && <span className='text-gray-600' title={`搜索词: ${query}`}>🔍{query}</span>}
+        </div>
+        {truncatedDesc && (
+          <p className='text-xs text-gray-500 dark:text-gray-600 line-clamp-2 leading-relaxed'>{truncatedDesc}</p>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function SearchPageClient() {
   // 搜索历史
@@ -52,7 +98,7 @@ function SearchPageClient() {
   const [isLoading, setIsLoading] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const [searchResults, setSearchResults] = useState<any[]>([]);
-  const [selectedSource, setSelectedSource] = useState<string>('');
+  const [sourceOrder, setSourceOrder] = useState<string[]>([]);
   const [loadingSources, setLoadingSources] = useState(false);
 
   // 按源分组
@@ -64,21 +110,9 @@ function SearchPageClient() {
       arr.push(item);
       map.set(name, arr);
     });
-    return Array.from(map.entries());
-  }, [searchResults]);
-
-  // 当前选中源的结果
-  const filteredResults = useMemo(() => {
-    if (!selectedSource) return [];
-    return searchResults.filter((item) => (item.source_name || item.source) === selectedSource);
-  }, [searchResults, selectedSource]);
-
-  // 计算结果后自动选第一个源
-  useEffect(() => {
-    if (!selectedSource && sourceGroups.length > 0) {
-      setSelectedSource(sourceGroups[0][0]);
-    }
-  }, [sourceGroups, selectedSource]);
+    // 按出现的先后顺序排列
+    return sourceOrder.filter(name => map.has(name)).map(name => [name, map.get(name)!] as [string, any[]]);
+  }, [searchResults, sourceOrder]);
 
   useEffect(() => {
     // 无搜索参数时聚焦搜索框
@@ -176,31 +210,52 @@ function SearchPageClient() {
     });
   };
 
+  const dedupeResults = (results: any[]) => {
+    const seen = new Set<string>();
+    return results.filter(r => {
+      const key = `${r.source}-${r.id}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  };
+
   const fetchSearchResults = async (query: string) => {
     try {
       setIsLoading(true);
       setSearchResults([]);
-      setSelectedSource('');
+      setSourceOrder([]);
       setLoadingSources(true);
 
-      // 渐进搜索：先返回前 8 个快速源，剩余后台继续
-      const [fastResults, getRemaining] = await downstreamSearchFast(query, 8);
+      const apiSites = await getAvailableApiSites();
+      const allResults: any[] = [];
+      const arrivedSources: string[] = [];
 
-      const sortedFast = sortResults(fastResults, query);
-      setSearchResults(sortedFast);
-      setShowResults(true);
-      setIsLoading(false);
-      saveSearchCache(query, sortedFast);
+      // 并发搜索所有源，每个源结果到达即展示
+      const sourcePromises = apiSites.map(async (site) => {
+        try {
+          const results = await searchFromApi(site, query);
+          if (results.length > 0) {
+            allResults.push(...results);
+            const deduped = dedupeResults(allResults);
+            setSearchResults(sortResults(deduped, query));
+            arrivedSources.push(site.name);
+            setSourceOrder([...arrivedSources]);
+            if (deduped.length > 0 && !showResults) {
+              setShowResults(true);
+            }
+          }
+        } catch {
+          // 该源搜索失败，跳过
+        }
+      });
 
-      // 后台继续加载剩余源
-      if (getRemaining) {
-        const remainingResults = await getRemaining();
-        setSearchResults(prev => {
-          const existingIds = new Set(prev.map(r => `${r.source}-${r.id}`));
-          const newItems = remainingResults.filter(r => !existingIds.has(`${r.source}-${r.id}`));
-          return sortResults([...prev, ...newItems], query);
-        });
+      await Promise.all(sourcePromises);
+
+      if (allResults.length > 0) {
+        saveSearchCache(query, dedupeResults(allResults));
       }
+      setIsLoading(false);
       setLoadingSources(false);
     } catch {
       setSearchResults([]);
@@ -296,55 +351,28 @@ function SearchPageClient() {
                   <p className='text-sm mt-1 opacity-60'>换个关键词试试吧</p>
                 </div>
               ) : (
-                /* 双列布局：左侧源列表，右侧结果 */
-                <div className='flex gap-4'>
-                  {/* 左侧源列表 ~1/5 宽 */}
-                  <div className='w-[18%] min-w-[100px] shrink-0'>
-                    <div className='sticky top-20 space-y-0.5'>
-                      {sourceGroups.map(([name, items]) => (
-                        <button
-                          key={name}
-                          onClick={() => setSelectedSource(name)}
-                          className={`w-full text-left px-2 py-2 rounded-md text-xs transition-colors truncate ${
-                            selectedSource === name
-                              ? 'bg-green-500/20 text-green-400 font-medium'
-                              : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'
-                          }`}
-                          title={name}
-                        >
-                          <span className='block truncate'>{name}</span>
-                          <span className='text-[10px] opacity-60'>{items.length} 项</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  {/* 右侧结果 - 列表 */}
-                  <div className='flex-1 min-w-0'>
-                    <div className='grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-3 gap-y-4 sm:gap-y-6'>
-                      {filteredResults.map((item) => (
-                        <div key={`${item.source}-${item.id}`} className='w-full'>
-                          <VideoCard
-                            id={item.id}
-                            title={item.title}
-                            poster={item.poster}
-                            episodes={item.episodes.length}
-                            source={item.source}
-                            source_name={item.source_name}
-                            douban_id={item.douban_id?.toString()}
-                            query={searchQuery.trim() !== item.title ? searchQuery.trim() : ''}
-                            year={item.year}
-                            from='search'
-                            type={item.episodes.length > 1 ? 'tv' : 'movie'}
+                <div className='space-y-8'>
+                  {sourceGroups.map(([sourceName, items]) => (
+                    <div key={sourceName}>
+                      <h3 className='text-sm font-semibold text-gray-500 dark:text-gray-400 mb-3 pl-1'>
+                        {sourceName} ({items.length})
+                      </h3>
+                      <div className='space-y-2'>
+                        {items.map((item: SearchResult) => (
+                          <ResultRow
+                            key={`${item.source}-${item.id}`}
+                            item={item}
+                            query={searchQuery.trim()}
+                            onClick={() => {
+                              router.push(
+                                `/play?source=${encodeURIComponent(item.source)}&id=${encodeURIComponent(item.id)}&title=${encodeURIComponent(item.title)}&searchTitle=${encodeURIComponent(searchQuery.trim())}`
+                              );
+                            }}
                           />
-                        </div>
-                      ))}
-                    </div>
-                    {filteredResults.length === 0 && selectedSource && (
-                      <div className='flex flex-col items-center justify-center py-16 text-gray-500 dark:text-gray-400'>
-                        <p className='text-lg'>该源无匹配结果</p>
+                        ))}
                       </div>
-                    )}
-                  </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </section>

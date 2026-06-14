@@ -158,7 +158,7 @@ export default function VideoCard({
     let cancelled = false;
     (async () => {
       try {
-        const dataUrl = await fetchImageAsDataUrl(actualPoster);
+        const dataUrl = await fetchImageAsDataUrl(processImageUrl(actualPoster));
         if (!cancelled) {
           setCapacitorImageUrl(dataUrl);
           setHasError(false);

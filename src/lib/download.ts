@@ -26,6 +26,8 @@ export interface DownloadTask {
   localPath?: string;
   localFileUri?: string;
   error?: string;
+  writeDirectory?: string;
+  segmentCount?: number;
 }
 
 const STORAGE_KEY = 'download_tasks';
@@ -441,60 +443,54 @@ async function downloadHlsStream(taskId: string, playlistUrl: string, fileName: 
     }
   }
 
-  const segNames: string[] = [];
+  const segNames: string[] = new Array(segments.length).fill('');
+  const threadCount = getDownloadSettings().downloadThreads;
 
-  for (let i = 0; i < segments.length; i++) {
+  // 多线程并发下载：每批 threadCount 个片段并发
+  for (let batch = 0; batch < segments.length; batch += threadCount) {
     if (signal?.aborted) throw new Error('下载已取消');
 
-    const segIndex = i + 1;
-    updateDownloadTask(taskId, { speed: `下载片段 ${segIndex}/${segments.length}` });
+    const batchEnd = Math.min(batch + threadCount, segments.length);
+    const batchIndices: number[] = [];
+    for (let k = batch; k < batchEnd; k++) batchIndices.push(k);
 
-    let blob: Blob | null = null;
-    let lastErr: Error | null = null;
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try { blob = await downloadSegment(segments[i], signal); break; }
-      catch (err) { lastErr = err as Error; if (attempt < 3 && !signal?.aborted) await new Promise(r => setTimeout(r, 1000 * attempt)); }
+    const batchResults = await Promise.all(
+      batchIndices.map(async (i) => {
+        const segIndex = i + 1;
+        let blob: Blob | null = null;
+        let lastErr: Error | null = null;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          if (signal?.aborted) break;
+          try { blob = await downloadSegment(segments[i], signal); break; }
+          catch (err) { lastErr = err as Error; if (attempt < 3 && !signal?.aborted) await new Promise(r => setTimeout(r, 1000 * attempt)); }
+        }
+        if (!blob) throw new Error(`下载片段 ${segIndex} 失败(重试3次): ${lastErr?.message || '未知错误'}`);
+
+        const arrayBuffer = await blob.arrayBuffer();
+        const base64 = arrayBufferToBase64(arrayBuffer);
+        const segName = `seg${String(segIndex).padStart(5, '0')}.ts`;
+        const segPath = `${dirPath}/${segName}`;
+        await Filesystem.writeFile({ path: segPath, data: base64, directory: writeDir, recursive: true });
+
+        return { i, segIndex, segName, size: blob.size };
+      })
+    );
+
+    for (const r of batchResults) {
+      if (signal?.aborted) throw new Error('下载已取消');
+      totalDownloaded += r.size;
+      segNames[r.i] = r.segName;
+      updateDownloadTask(taskId, {
+        progress: Math.round(((r.i + 1) / segments.length) * 100),
+        downloadedBytes: totalDownloaded,
+        totalBytes: totalDownloaded,
+        speed: `${r.segIndex}/${segments.length} 片段 (${threadCount}线程)`,
+      });
     }
-    if (!blob) throw new Error(`下载第 ${segIndex} 个片段失败(重试3次): ${lastErr?.message || '未知错误'}`);
-
-    totalDownloaded += blob.size;
-
-    // 逐个保存片段到文件系统（避免全部缓存到内存导致 OOM）
-    const arrayBuffer = await blob.arrayBuffer();
-    const base64 = arrayBufferToBase64(arrayBuffer);
-    const segName = `seg${String(segIndex).padStart(5, '0')}.ts`;
-    const segPath = `${dirPath}/${segName}`;
-
-    await Filesystem.writeFile({
-      path: segPath,
-      data: base64,
-      directory: writeDir,
-      recursive: true,
-    });
-
-    segNames.push(segName);
-
-    updateDownloadTask(taskId, {
-      progress: Math.round(((i + 1) / segments.length) * 100),
-      downloadedBytes: totalDownloaded,
-      totalBytes: totalDownloaded,
-      speed: `${segIndex}/${segments.length} 片段`,
-    });
   }
 
-  // 生成 M3U8 播放列表，用 Capacitor.convertFileSrc 获取 WebView 可访问的 URL
+  // 生成简单 M3U8 播放列表（相对路径，播放时由自定义 loader 处理）
   updateDownloadTask(taskId, { speed: '生成播放列表...' });
-
-  const segUrls: string[] = [];
-  for (const name of segNames) {
-    const fullPath = `${dirPath}/${name}`;
-    try {
-      const uri = await Filesystem.getUri({ path: fullPath, directory: writeDir });
-      segUrls.push(Capacitor.convertFileSrc(uri.uri));
-    } catch {
-      segUrls.push(name);
-    }
-  }
 
   const playlistContent = [
     '#EXTM3U',
@@ -502,9 +498,9 @@ async function downloadHlsStream(taskId: string, playlistUrl: string, fileName: 
     '#EXT-X-TARGETDURATION:10',
     '#EXT-X-MEDIA-SEQUENCE:0',
     '#EXT-X-PLAYLIST-TYPE:VOD',
-    ...segUrls.map((segUrl) => [
+    ...segNames.map((seg) => [
       '#EXTINF:10.0,',
-      segUrl,
+      seg,
     ].join('\n')),
     '#EXT-X-ENDLIST',
   ].join('\n');
@@ -519,14 +515,8 @@ async function downloadHlsStream(taskId: string, playlistUrl: string, fileName: 
     recursive: true,
   });
 
-  // 获取播放列表 URI
-  let localFileUri = '';
-  try {
-    const uriResult = await Filesystem.getUri({ path: playlistPath, directory: writeDir });
-    localFileUri = Capacitor.convertFileSrc(uriResult.uri);
-  } catch {
-    localFileUri = playlistPath;
-  }
+  // 保存目录信息到任务
+  const writeDirName = writeDir === Directory.Data ? 'Data' : 'Library';
 
   updateDownloadTask(taskId, {
     status: 'completed',
@@ -534,8 +524,10 @@ async function downloadHlsStream(taskId: string, playlistUrl: string, fileName: 
     downloadedBytes: totalDownloaded,
     totalBytes: totalDownloaded,
     speed: '完成',
-    localPath: playlistPath,
-    localFileUri,
+    localPath: `${dirPath}/${playlistName}`,
+    localFileUri: `${dirPath}/${playlistName}`,
+    writeDirectory: writeDirName,
+    segmentCount: segments.length,
   });
 }
 
