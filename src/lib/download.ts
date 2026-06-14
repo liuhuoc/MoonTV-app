@@ -429,19 +429,14 @@ async function downloadHlsStream(taskId: string, playlistUrl: string, fileName: 
     return;
   }
 
-  // Capacitor 环境：逐段下载并保存到文件系统，生成 M3U8 播放列表
-  // 确定写入目录（Android 14+ 使用 Directory.Data 避免 scoped storage 问题）
+  // Capacitor 环境：确定写入目录，静默处理"已存在"错误
   let writeDir = Directory.Data;
-  try {
-    await Filesystem.mkdir({ path: dirPath, directory: Directory.Data, recursive: true });
-  } catch {
-    try {
-      await Filesystem.mkdir({ path: dirPath, directory: Directory.Library, recursive: true });
-      writeDir = Directory.Library;
-    } catch {
-      throw new Error('无法创建下载目录，请检查存储权限');
-    }
-  }
+  const ensureDir = async (path: string, dir: Directory) => {
+    try { await Filesystem.stat({ path, directory: dir }); return; /* 已存在，跳过 */ } catch { /* 不存在 */ }
+    try { await Filesystem.mkdir({ path, directory: dir, recursive: true }); } catch { /* mkdir 失败也继续，writeFile recursive 会兜底 */ }
+  };
+  try { await ensureDir(dirPath, Directory.Data); } catch { /* fall through */ }
+  try { await ensureDir(dirPath, Directory.Library); writeDir = Directory.Library; } catch { /* fall through */ }
 
   const threadCount = getDownloadSettings().downloadThreads;
   const allBlobs: (Blob | null)[] = new Array(segments.length).fill(null);

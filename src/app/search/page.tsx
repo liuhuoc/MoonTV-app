@@ -44,20 +44,15 @@ function ResultRow({ item, query, onClick }: { item: SearchResult; query: string
         )}
       </div>
       <div className='flex-1 min-w-0 flex flex-col justify-center gap-1'>
-        <div className='flex items-center gap-2'>
-          <h4 className='text-sm font-medium text-gray-200 truncate'>{title}</h4>
-          {sourceName && (
-            <span className='text-[10px] px-1.5 py-0.5 rounded bg-green-500/10 text-green-400 shrink-0'>{sourceName}</span>
-          )}
-        </div>
+        <h4 className='text-sm font-medium text-gray-800 dark:text-gray-200 truncate'>{title}</h4>
         <div className='flex items-center gap-2 text-xs text-gray-500'>
           {year && <span>{year}</span>}
           {typeName && <span className='px-1 py-0.5 rounded bg-white/5'>{typeName}</span>}
           {epCount > 0 && <span>{epCount}集</span>}
-          {query && title !== query && <span className='text-gray-600' title={`搜索词: ${query}`}>🔍{query}</span>}
+          {query && title !== query && <span className='text-gray-400 dark:text-gray-600' title={`搜索词: ${query}`}>🔍{query}</span>}
         </div>
         {truncatedDesc && (
-          <p className='text-xs text-gray-500 dark:text-gray-600 line-clamp-2 leading-relaxed'>{truncatedDesc}</p>
+          <p className='text-xs text-gray-400 dark:text-gray-500 line-clamp-2 leading-relaxed'>{truncatedDesc}</p>
         )}
       </div>
     </div>
@@ -356,7 +351,7 @@ function SearchPageClient() {
           ) : showResults ? (
             <section className='mb-12'>
               <div className='flex items-center justify-between mb-6'>
-                <h2 className='text-xl font-bold text-gray-800 dark:text-gray-200'>
+                <h2 className='text-xl font-bold text-gray-900 dark:text-gray-200'>
                   搜索结果 ({searchResults.length})
                 </h2>
                 {loadingSources && (
@@ -372,16 +367,16 @@ function SearchPageClient() {
               ) : (
                 <div className='flex gap-4'>
                   {/* 左侧源列表 */}
-                  <div className='w-1/5 min-w-[100px] max-w-[180px] shrink-0'>
+                  <div className='w-1/6 min-w-[90px] max-w-[140px] shrink-0'>
                     <div className='sticky top-20 space-y-0.5'>
                       {sourceGroups.map(([name, items]) => (
                         <button
                           key={name}
                           onClick={() => setSelectedSource(name)}
-                          className={`w-full text-left px-2.5 py-2 rounded-md text-xs transition-colors ${
+                          className={`w-full text-left px-2 py-2 rounded-md text-xs transition-colors ${
                             selectedSource === name
-                              ? 'bg-green-500/20 text-green-400 font-medium'
-                              : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'
+                              ? 'bg-green-500/20 text-green-600 dark:text-green-400 font-medium'
+                              : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/5'
                           }`}
                           title={name}
                         >

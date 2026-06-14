@@ -5,9 +5,8 @@
 import { ArrowRight, Search } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 
-// 客户端收藏 API
 import { getDoubanCategories } from '@/lib/douban.client';
 import { DoubanItem } from '@/lib/types';
 
@@ -15,6 +14,16 @@ import ContinueWatching from '@/components/ContinueWatching';
 import PageLayout from '@/components/PageLayout';
 import ScrollableRow from '@/components/ScrollableRow';
 import VideoCard from '@/components/VideoCard';
+
+type CategoryCache = {
+  movies: DoubanItem[];
+  tv: DoubanItem[];
+  variety: DoubanItem[];
+  anime: DoubanItem[];
+  time: number;
+};
+
+let __categoryCache: CategoryCache | null = null;
 
 function HomeClient() {
   const router = useRouter();
@@ -24,8 +33,7 @@ function HomeClient() {
   const [hotVarietyShows, setHotVarietyShows] = useState<DoubanItem[]>([]);
   const [hotAnimation, setHotAnimation] = useState<DoubanItem[]>([]);
   const [loading, setLoading] = useState(true);
-
-  const CATEGORY_CACHE_KEY = 'moontv_category_cache';
+  const fetchedRef = useRef(false);
 
   const getCacheTTL = () => {
     try {
@@ -35,35 +43,18 @@ function HomeClient() {
     return 60 * 60 * 1000; // 默认1小时
   };
 
-  const loadCategoryCache = () => {
-    try {
-      const raw = sessionStorage.getItem(CATEGORY_CACHE_KEY);
-      if (!raw) return null;
-      const cached = JSON.parse(raw);
-      if (Date.now() - cached.time > getCacheTTL()) {
-        sessionStorage.removeItem(CATEGORY_CACHE_KEY);
-        return null;
-      }
-      return cached.data;
-    } catch { return null; }
-  };
-
-  const saveCategoryCache = (data: { movies: DoubanItem[]; tv: DoubanItem[]; variety: DoubanItem[]; anime: DoubanItem[] }) => {
-    try {
-      sessionStorage.setItem(CATEGORY_CACHE_KEY, JSON.stringify({ data, time: Date.now() }));
-    } catch { /* ignore */ }
-  };
-
   useEffect(() => {
+    if (fetchedRef.current) return;
+    fetchedRef.current = true;
+
     const fetchDoubanData = async () => {
       try {
-        // 先尝试读取缓存
-        const cached = loadCategoryCache();
-        if (cached) {
-          setHotMovies(cached.movies);
-          setHotTvShows(cached.tv);
-          setHotVarietyShows(cached.variety);
-          setHotAnimation(cached.anime);
+        // 先检查模块级缓存（同一次 app 启动内有效）
+        if (__categoryCache && Date.now() - __categoryCache.time < getCacheTTL()) {
+          setHotMovies(__categoryCache.movies);
+          setHotTvShows(__categoryCache.tv);
+          setHotVarietyShows(__categoryCache.variety);
+          setHotAnimation(__categoryCache.anime);
           setLoading(false);
           return;
         }
@@ -71,11 +62,7 @@ function HomeClient() {
         setLoading(true);
 
         const results = await Promise.allSettled([
-          getDoubanCategories({
-            kind: 'movie',
-            category: '热门',
-            type: '全部',
-          }),
+          getDoubanCategories({ kind: 'movie', category: '热门', type: '全部' }),
           getDoubanCategories({ kind: 'tv', category: 'tv', type: 'tv' }),
           getDoubanCategories({ kind: 'tv', category: 'show', type: 'show' }),
           getDoubanCategories({ kind: 'movie', category: '热门', type: '日本' }),
@@ -85,41 +72,26 @@ function HomeClient() {
 
         if (moviesResult.status === 'fulfilled' && moviesResult.value.code === 200) {
           setHotMovies(moviesResult.value.list);
-        } else {
-          const moviesErr = moviesResult.status === 'rejected' ? moviesResult.reason : moviesResult.value?.message;
-          console.warn('热门电影加载失败:', moviesErr instanceof Error ? moviesErr.message : JSON.stringify(moviesErr));
         }
-
         if (tvResult.status === 'fulfilled' && tvResult.value.code === 200) {
           setHotTvShows(tvResult.value.list);
-        } else {
-          const tvErr = tvResult.status === 'rejected' ? tvResult.reason : tvResult.value?.message;
-          console.warn('热门剧集加载失败:', tvErr instanceof Error ? tvErr.message : JSON.stringify(tvErr));
         }
-
         if (varietyResult.status === 'fulfilled' && varietyResult.value.code === 200) {
           setHotVarietyShows(varietyResult.value.list);
-        } else {
-          const varietyErr = varietyResult.status === 'rejected' ? varietyResult.reason : varietyResult.value?.message;
-          console.warn('热门综艺加载失败:', varietyErr instanceof Error ? varietyErr.message : JSON.stringify(varietyErr));
         }
-
         if (animationResult.status === 'fulfilled' && animationResult.value.code === 200) {
           setHotAnimation(animationResult.value.list);
-        } else {
-          const animationErr = animationResult.status === 'rejected' ? animationResult.reason : animationResult.value?.message;
-          console.warn('热门动漫加载失败:', animationErr instanceof Error ? animationErr.message : JSON.stringify(animationErr));
         }
 
-        // 保存缓存（使用原始结果，state 尚未更新）
-        const cachedMovies = moviesResult.status === 'fulfilled' && moviesResult.value.code === 200 ? moviesResult.value.list : [];
-        const cachedTv = tvResult.status === 'fulfilled' && tvResult.value.code === 200 ? tvResult.value.list : [];
-        const cachedVariety = varietyResult.status === 'fulfilled' && varietyResult.value.code === 200 ? varietyResult.value.list : [];
-        const cachedAnime = animationResult.status === 'fulfilled' && animationResult.value.code === 200 ? animationResult.value.list : [];
-        saveCategoryCache({ movies: cachedMovies, tv: cachedTv, variety: cachedVariety, anime: cachedAnime });
+        __categoryCache = {
+          movies: moviesResult.status === 'fulfilled' && moviesResult.value.code === 200 ? moviesResult.value.list : [],
+          tv: tvResult.status === 'fulfilled' && tvResult.value.code === 200 ? tvResult.value.list : [],
+          variety: varietyResult.status === 'fulfilled' && varietyResult.value.code === 200 ? varietyResult.value.list : [],
+          anime: animationResult.status === 'fulfilled' && animationResult.value.code === 200 ? animationResult.value.list : [],
+          time: Date.now(),
+        };
       } catch (error) {
-        const errMsg = error instanceof Error ? error.message : JSON.stringify(error);
-        console.error('获取豆瓣数据失败:', errMsg, error);
+        console.error('获取豆瓣数据失败:', error);
       } finally {
         setLoading(false);
       }
