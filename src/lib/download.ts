@@ -443,8 +443,8 @@ async function downloadHlsStream(taskId: string, playlistUrl: string, fileName: 
     }
   }
 
-  const segNames: string[] = new Array(segments.length).fill('');
   const threadCount = getDownloadSettings().downloadThreads;
+  const allBlobs: (Blob | null)[] = new Array(segments.length).fill(null);
 
   // 多线程并发下载：每批 threadCount 个片段并发
   for (let batch = 0; batch < segments.length; batch += threadCount) {
@@ -465,21 +465,14 @@ async function downloadHlsStream(taskId: string, playlistUrl: string, fileName: 
           catch (err) { lastErr = err as Error; if (attempt < 3 && !signal?.aborted) await new Promise(r => setTimeout(r, 1000 * attempt)); }
         }
         if (!blob) throw new Error(`下载片段 ${segIndex} 失败(重试3次): ${lastErr?.message || '未知错误'}`);
-
-        const arrayBuffer = await blob.arrayBuffer();
-        const base64 = arrayBufferToBase64(arrayBuffer);
-        const segName = `seg${String(segIndex).padStart(5, '0')}.ts`;
-        const segPath = `${dirPath}/${segName}`;
-        await Filesystem.writeFile({ path: segPath, data: base64, directory: writeDir, recursive: true });
-
-        return { i, segIndex, segName, size: blob.size };
+        return { i, segIndex, size: blob.size, blob };
       })
     );
 
     for (const r of batchResults) {
       if (signal?.aborted) throw new Error('下载已取消');
       totalDownloaded += r.size;
-      segNames[r.i] = r.segName;
+      allBlobs[r.i] = r.blob;
       updateDownloadTask(taskId, {
         progress: Math.round(((r.i + 1) / segments.length) * 100),
         downloadedBytes: totalDownloaded,
@@ -489,39 +482,21 @@ async function downloadHlsStream(taskId: string, playlistUrl: string, fileName: 
     }
   }
 
-  // 生成 M3U8 播放列表，用 Capacitor.convertFileSrc 生成 WebView 可访问的 URL
-  updateDownloadTask(taskId, { speed: '生成播放列表...' });
+  // 合并所有片段为单个文件
+  updateDownloadTask(taskId, { speed: '正在合并视频文件...' });
+  const validBlobs = allBlobs.filter((b): b is Blob => b !== null);
+  const mergedBlob = new Blob(validBlobs, { type: 'video/mp2t' });
 
-  const segUrls: string[] = [];
-  for (const name of segNames) {
-    const fullPath = `${dirPath}/${name}`;
-    try {
-      const uri = await Filesystem.getUri({ path: fullPath, directory: writeDir });
-      segUrls.push(Capacitor.convertFileSrc(uri.uri));
-    } catch {
-      segUrls.push(name);
-    }
-  }
-
-  const playlistContent = [
-    '#EXTM3U',
-    '#EXT-X-VERSION:3',
-    '#EXT-X-TARGETDURATION:10',
-    '#EXT-X-MEDIA-SEQUENCE:0',
-    '#EXT-X-PLAYLIST-TYPE:VOD',
-    ...segUrls.map((segUrl) => [
-      '#EXTINF:10.0,',
-      segUrl,
-    ].join('\n')),
-    '#EXT-X-ENDLIST',
-  ].join('\n');
-
-  const playlistName = 'playlist.m3u8';
-  const playlistPath = `${dirPath}/${playlistName}`;
+  // 保存合并文件
+  updateDownloadTask(taskId, { speed: '正在保存...' });
+  const arrayBuffer = await mergedBlob.arrayBuffer();
+  const base64 = arrayBufferToBase64(arrayBuffer);
+  const mergedFileName = 'video.ts';
+  const mergedPath = `${dirPath}/${mergedFileName}`;
 
   await Filesystem.writeFile({
-    path: playlistPath,
-    data: playlistContent,
+    path: mergedPath,
+    data: base64,
     directory: writeDir,
     recursive: true,
   });
@@ -534,10 +509,10 @@ async function downloadHlsStream(taskId: string, playlistUrl: string, fileName: 
     downloadedBytes: totalDownloaded,
     totalBytes: totalDownloaded,
     speed: '完成',
-    localPath: playlistPath,
-    localFileUri: playlistPath,
+    localPath: mergedPath,
+    localFileUri: mergedPath,
     writeDirectory: writeDirName,
-    segmentCount: segments.length,
+    segmentCount: 1,
   });
 }
 

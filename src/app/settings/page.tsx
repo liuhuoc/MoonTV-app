@@ -25,9 +25,10 @@ export default function SettingsPage() {
   const [maxConcurrent, setMaxConcurrent] = useState(2);
   const [autoCleanup, setAutoCleanup] = useState(true);
   const [downloadThreads, setDownloadThreads] = useState(3);
+  const [categoryCacheMinutes, setCategoryCacheMinutes] = useState(60);
 
   // 折叠面板状态
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['search', 'play', 'download', 'source', 'proxy']));
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(['play', 'download', 'source', 'proxy']));
 
   // 源管理
   const ENABLED_SOURCES_KEY = 'enabledSources';
@@ -129,6 +130,9 @@ export default function SettingsPage() {
     setAutoCleanup(dlSettings.autoCleanup);
     setDownloadThreads(dlSettings.downloadThreads);
 
+    const savedCategoryCacheMinutes = localStorage.getItem('categoryCacheMinutes');
+    if (savedCategoryCacheMinutes !== null) setCategoryCacheMinutes(parseInt(savedCategoryCacheMinutes, 10));
+
     const enabled = getEnabledSources();
     setEnabledSources(enabled);
     const savedStatuses = getSourceStatuses();
@@ -167,6 +171,7 @@ export default function SettingsPage() {
     setMaxConcurrent(2);
     setAutoCleanup(true);
     setDownloadThreads(3);
+    setCategoryCacheMinutes(60);
 
     if (typeof window !== 'undefined') {
       localStorage.setItem('enableOptimization', JSON.stringify(true));
@@ -174,6 +179,7 @@ export default function SettingsPage() {
       localStorage.setItem('enableDoubanProxy', JSON.stringify(false));
       localStorage.setItem('enableImageProxy', JSON.stringify(false));
       localStorage.setItem('imageProxyUrl', '');
+      localStorage.setItem('categoryCacheMinutes', '60');
       saveDownloadSettings({ maxConcurrent: 2, autoCleanup: true, downloadThreads: 3 });
       saveEnabledSources(new Set(allApiSites.map(s => s.key)));
       saveSourceStatuses({});
@@ -417,10 +423,35 @@ export default function SettingsPage() {
           {/* 设置卡片 */}
           <div className='space-y-3 bg-white dark:bg-gray-900 rounded-2xl p-5 shadow-sm border border-gray-100 dark:border-gray-800'>
 
-            {/* 搜索设置 */}
-            <SectionHeader id='search' title='搜索设置' icon={<svg className='w-4 h-4 text-blue-500' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2'><circle cx='11' cy='11' r='8'/><line x1='21' y1='21' x2='16.65' y2='16.65'/></svg>} />
+            {/* 首页分类缓存 */}
+            <SectionHeader id='search' title='首页分类缓存' icon={<svg className='w-4 h-4 text-blue-500' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2'><circle cx='11' cy='11' r='8'/><line x1='21' y1='21' x2='16.65' y2='16.65'/></svg>} />
             {expandedSections.has('search') && (
               <div className='px-4 pb-4 space-y-4 border-b border-gray-100 dark:border-gray-800'>
+                <div className='flex items-center justify-between'>
+                  <div>
+                    <h4 className='text-sm font-medium text-gray-700 dark:text-gray-300'>缓存有效时间（分钟）</h4>
+                    <p className='text-xs text-gray-500 dark:text-gray-400 mt-1'>首页分类数据在有效期内不再重复请求（0 = 不缓存）</p>
+                  </div>
+                  <div className='flex items-center gap-2'>
+                    <button
+                      onClick={() => {
+                        const v = Math.max(0, categoryCacheMinutes - 10);
+                        setCategoryCacheMinutes(v);
+                        localStorage.setItem('categoryCacheMinutes', String(v));
+                      }}
+                      className='w-8 h-8 rounded-full border border-gray-300 dark:border-gray-600 flex items-center justify-center text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors'
+                    >-</button>
+                    <span className='w-10 text-center text-sm font-medium text-gray-700 dark:text-gray-300'>{categoryCacheMinutes}</span>
+                    <button
+                      onClick={() => {
+                        const v = Math.min(1440, categoryCacheMinutes + 10);
+                        setCategoryCacheMinutes(v);
+                        localStorage.setItem('categoryCacheMinutes', String(v));
+                      }}
+                      className='w-8 h-8 rounded-full border border-gray-300 dark:border-gray-600 flex items-center justify-center text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors'
+                    >+</button>
+                  </div>
+                </div>
               </div>
             )}
 

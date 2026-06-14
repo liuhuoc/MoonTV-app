@@ -248,6 +248,7 @@ function SearchPageClient() {
       const arrivedSources: string[] = [];
 
       // 并发搜索所有源，每个源结果到达即展示
+      let firstArrived = false;
       const sourcePromises = apiSites.map(async (site) => {
         try {
           const results = await searchFromApi(site, query);
@@ -257,8 +258,10 @@ function SearchPageClient() {
             setSearchResults(sortResults(deduped, query));
             arrivedSources.push(site.name);
             setSourceOrder([...arrivedSources]);
-            if (deduped.length > 0 && !showResults) {
+            if (!firstArrived) {
+              firstArrived = true;
               setShowResults(true);
+              setIsLoading(false);
             }
           }
         } catch {
@@ -369,7 +372,7 @@ function SearchPageClient() {
               ) : (
                 <div className='flex gap-4'>
                   {/* 左侧源列表 */}
-                  <div className='w-40 shrink-0'>
+                  <div className='w-1/5 min-w-[100px] max-w-[180px] shrink-0'>
                     <div className='sticky top-20 space-y-0.5'>
                       {sourceGroups.map(([name, items]) => (
                         <button

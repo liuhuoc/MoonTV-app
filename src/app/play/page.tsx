@@ -5,7 +5,6 @@
 import { ScreenOrientation } from '@capacitor/screen-orientation';
 import { StatusBar } from '@capacitor/status-bar';
 import { Directory, Filesystem } from '@capacitor/filesystem';
-import { Capacitor } from '@capacitor/core';
 import Artplayer from 'artplayer';
 import Hls from 'hls.js';
 import { Heart, Download } from 'lucide-react';
@@ -693,11 +692,11 @@ function PlayPageClient() {
       if (hasInitializedRef.current) return;
       hasInitializedRef.current = true;
 
-      // 本地文件播放：转换为 Capacitor 可访问 URL 后由 HLS.js 加载
+      // 本地文件播放：读合并文件 → Blob URL → HTML5 video 直接播放
       if (currentSource === 'local') {
         const dlTasks = getDownloadTasks();
         const dlTask = dlTasks.find(t => t.id === currentId);
-        if (!dlTask?.localPath || !dlTask.writeDirectory || !dlTask.segmentCount) {
+        if (!dlTask?.localPath || !dlTask.writeDirectory) {
           setError('已下载文件信息不完整，请重新下载');
           setLoading(false);
           return;
@@ -709,15 +708,21 @@ function PlayPageClient() {
           title: dlTask.title,
           source: 'local',
           source_name: '本地文件',
-          episodes: [dlTask.localFileUri || ''],
+          episodes: [dlTask.localPath],
           douban_id: 0,
         } as any);
 
         try {
+          setLoadingMessage('正在加载本地视频...');
           const writeDirEnum = dlTask.writeDirectory === 'Library' ? Directory.Library : Directory.Data;
-          const uriResult = await Filesystem.getUri({ path: dlTask.localPath, directory: writeDirEnum });
-          const localUrl = Capacitor.convertFileSrc(uriResult.uri);
-          setVideoUrl(localUrl);
+          const result = await Filesystem.readFile({ path: dlTask.localPath, directory: writeDirEnum });
+          const base64 = result.data as string;
+          const binaryStr = atob(base64);
+          const bytes = new Uint8Array(binaryStr.length);
+          for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+          const blob = new Blob([bytes], { type: 'video/mp2t' });
+          const blobUrl = URL.createObjectURL(blob);
+          setVideoUrl(blobUrl);
           setLoading(false);
         } catch (e) {
           setError(`读取本地视频失败: ${(e as Error).message}`);

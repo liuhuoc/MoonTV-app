@@ -25,9 +25,49 @@ function HomeClient() {
   const [hotAnimation, setHotAnimation] = useState<DoubanItem[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const CATEGORY_CACHE_KEY = 'moontv_category_cache';
+
+  const getCacheTTL = () => {
+    try {
+      const raw = localStorage.getItem('categoryCacheMinutes');
+      if (raw) return parseInt(raw, 10) * 60 * 1000;
+    } catch { /* ignore */ }
+    return 60 * 60 * 1000; // 默认1小时
+  };
+
+  const loadCategoryCache = () => {
+    try {
+      const raw = sessionStorage.getItem(CATEGORY_CACHE_KEY);
+      if (!raw) return null;
+      const cached = JSON.parse(raw);
+      if (Date.now() - cached.time > getCacheTTL()) {
+        sessionStorage.removeItem(CATEGORY_CACHE_KEY);
+        return null;
+      }
+      return cached.data;
+    } catch { return null; }
+  };
+
+  const saveCategoryCache = (data: { movies: DoubanItem[]; tv: DoubanItem[]; variety: DoubanItem[]; anime: DoubanItem[] }) => {
+    try {
+      sessionStorage.setItem(CATEGORY_CACHE_KEY, JSON.stringify({ data, time: Date.now() }));
+    } catch { /* ignore */ }
+  };
+
   useEffect(() => {
     const fetchDoubanData = async () => {
       try {
+        // 先尝试读取缓存
+        const cached = loadCategoryCache();
+        if (cached) {
+          setHotMovies(cached.movies);
+          setHotTvShows(cached.tv);
+          setHotVarietyShows(cached.variety);
+          setHotAnimation(cached.anime);
+          setLoading(false);
+          return;
+        }
+
         setLoading(true);
 
         const results = await Promise.allSettled([
@@ -70,6 +110,13 @@ function HomeClient() {
           const animationErr = animationResult.status === 'rejected' ? animationResult.reason : animationResult.value?.message;
           console.warn('热门动漫加载失败:', animationErr instanceof Error ? animationErr.message : JSON.stringify(animationErr));
         }
+
+        // 保存缓存（使用原始结果，state 尚未更新）
+        const cachedMovies = moviesResult.status === 'fulfilled' && moviesResult.value.code === 200 ? moviesResult.value.list : [];
+        const cachedTv = tvResult.status === 'fulfilled' && tvResult.value.code === 200 ? tvResult.value.list : [];
+        const cachedVariety = varietyResult.status === 'fulfilled' && varietyResult.value.code === 200 ? varietyResult.value.list : [];
+        const cachedAnime = animationResult.status === 'fulfilled' && animationResult.value.code === 200 ? animationResult.value.list : [];
+        saveCategoryCache({ movies: cachedMovies, tv: cachedTv, variety: cachedVariety, anime: cachedAnime });
       } catch (error) {
         const errMsg = error instanceof Error ? error.message : JSON.stringify(error);
         console.error('获取豆瓣数据失败:', errMsg, error);
