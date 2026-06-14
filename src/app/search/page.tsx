@@ -12,7 +12,8 @@ import {
   getSearchHistory,
   subscribeToDataUpdates,
 } from '@/lib/db.client';
-import { searchFromApi, type SearchResult } from '@/lib/downstream';
+import { searchFromApi, type ApiSite } from '@/lib/downstream';
+import type { SearchResult } from '@/lib/types';
 import { getAvailableApiSites } from '@/lib/config';
 import { processImageUrl } from '@/lib/utils';
 
