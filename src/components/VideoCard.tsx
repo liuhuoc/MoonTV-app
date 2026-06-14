@@ -317,7 +317,8 @@ export default function VideoCard({
           <img
             src={capacitorImageUrl || processImageUrl(actualPoster)}
             alt={actualTitle}
-            referrerPolicy="no-referrer"
+            referrerPolicy="origin"
+            crossOrigin="anonymous"
             className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 ease-out group-hover:scale-105"
             onLoad={() => {
               console.log('[VideoCard] 图片加载成功:', processImageUrl(actualPoster).substring(0, 80));

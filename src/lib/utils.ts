@@ -12,6 +12,9 @@ export async function fetchImageAsDataUrl(imageUrl: string): Promise<string> {
       url: imageUrl,
       method: 'GET',
       responseType: 'blob',
+      headers: {
+        Referer: 'https://movie.douban.com/',
+      },
       connectTimeout: 10000,
       readTimeout: 15000,
     });

@@ -12,7 +12,7 @@ import {
   getSearchHistory,
   subscribeToDataUpdates,
 } from '@/lib/db.client';
-import { downstreamSearch } from '@/lib/downstream';
+import { downstreamSearch, downstreamSearchFast } from '@/lib/downstream';
 
 import PageLayout from '@/components/PageLayout';
 import VideoCard from '@/components/VideoCard';
@@ -52,7 +52,8 @@ function SearchPageClient() {
   const [isLoading, setIsLoading] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const [searchResults, setSearchResults] = useState<any[]>([]);
-  const [selectedSource, setSelectedSource] = useState<string>('全部');
+  const [selectedSource, setSelectedSource] = useState<string>('');
+  const [loadingSources, setLoadingSources] = useState(false);
 
   // 按源分组
   const sourceGroups = useMemo(() => {
@@ -63,14 +64,21 @@ function SearchPageClient() {
       arr.push(item);
       map.set(name, arr);
     });
-    return Array.from(map.entries()).sort((a, b) => b[1].length - a[1].length);
+    return Array.from(map.entries());
   }, [searchResults]);
 
-  // 当前选中的结果
+  // 当前选中源的结果
   const filteredResults = useMemo(() => {
-    if (selectedSource === '全部') return searchResults;
+    if (!selectedSource) return [];
     return searchResults.filter((item) => (item.source_name || item.source) === selectedSource);
   }, [searchResults, selectedSource]);
+
+  // 计算结果后自动选第一个源
+  useEffect(() => {
+    if (!selectedSource && sourceGroups.length > 0) {
+      setSelectedSource(sourceGroups[0][0]);
+    }
+  }, [sourceGroups, selectedSource]);
 
   useEffect(() => {
     // 无搜索参数时聚焦搜索框
@@ -154,42 +162,50 @@ function SearchPageClient() {
     }
   }, [searchParams]);
 
+  const sortResults = (results: any[], query: string) => {
+    return [...results].sort((a, b) => {
+      const aExactMatch = a.title === query.trim();
+      const bExactMatch = b.title === query.trim();
+      if (aExactMatch && !bExactMatch) return -1;
+      if (!aExactMatch && bExactMatch) return 1;
+      if (a.year === b.year) return a.title.localeCompare(b.title);
+      if (a.year === 'unknown' && b.year === 'unknown') return 0;
+      if (a.year === 'unknown') return 1;
+      if (b.year === 'unknown') return -1;
+      return parseInt(a.year) > parseInt(b.year) ? -1 : 1;
+    });
+  };
+
   const fetchSearchResults = async (query: string) => {
     try {
       setIsLoading(true);
-      const results = await downstreamSearch(query);
-      const sorted = results.sort((a: any, b: any) => {
-        // 优先排序：标题与搜索词完全一致的排在前面
-        const aExactMatch = a.title === query.trim();
-        const bExactMatch = b.title === query.trim();
-
-        if (aExactMatch && !bExactMatch) return -1;
-        if (!aExactMatch && bExactMatch) return 1;
-
-        // 如果都匹配或都不匹配，则按原来的逻辑排序
-        if (a.year === b.year) {
-          return a.title.localeCompare(b.title);
-        } else {
-          // 处理 unknown 的情况
-          if (a.year === 'unknown' && b.year === 'unknown') {
-            return 0;
-          } else if (a.year === 'unknown') {
-            return 1; // a 排在后面
-          } else if (b.year === 'unknown') {
-            return -1; // b 排在后面
-          } else {
-            // 都是数字年份，按数字大小排序（大的在前面）
-            return parseInt(a.year) > parseInt(b.year) ? -1 : 1;
-          }
-        }
-      });
-      setSearchResults(sorted);
-      setShowResults(true);
-      saveSearchCache(query, sorted);
-    } catch (error) {
       setSearchResults([]);
-    } finally {
+      setSelectedSource('');
+      setLoadingSources(true);
+
+      // 渐进搜索：先返回前 8 个快速源，剩余后台继续
+      const [fastResults, getRemaining] = await downstreamSearchFast(query, 8);
+
+      const sortedFast = sortResults(fastResults, query);
+      setSearchResults(sortedFast);
+      setShowResults(true);
       setIsLoading(false);
+      saveSearchCache(query, sortedFast);
+
+      // 后台继续加载剩余源
+      if (getRemaining) {
+        const remainingResults = await getRemaining();
+        setSearchResults(prev => {
+          const existingIds = new Set(prev.map(r => `${r.source}-${r.id}`));
+          const newItems = remainingResults.filter(r => !existingIds.has(`${r.source}-${r.id}`));
+          return sortResults([...prev, ...newItems], query);
+        });
+      }
+      setLoadingSources(false);
+    } catch {
+      setSearchResults([]);
+      setIsLoading(false);
+      setLoadingSources(false);
     }
   };
 
@@ -265,68 +281,72 @@ function SearchPageClient() {
             </div>
           ) : showResults ? (
             <section className='mb-12'>
-              <h2 className='text-xl font-bold text-gray-800 dark:text-gray-200 mb-6'>
-                搜索结果 ({searchResults.length})
-              </h2>
-              {/* 双列布局：左侧源列表，右侧结果 */}
-              <div className='flex gap-6'>
-                {/* 左侧源列表 */}
-                <div className='w-44 shrink-0'>
-                  <div className='sticky top-20 space-y-1'>
-                    <button
-                      onClick={() => setSelectedSource('全部')}
-                      className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors ${
-                        selectedSource === '全部'
-                          ? 'bg-green-500/20 text-green-400 font-medium'
-                          : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'
-                      }`}
-                    >
-                      全部 ({searchResults.length})
-                    </button>
-                    {sourceGroups.map(([name, items]) => (
-                      <button
-                        key={name}
-                        onClick={() => setSelectedSource(name)}
-                        className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors truncate ${
-                          selectedSource === name
-                            ? 'bg-green-500/20 text-green-400 font-medium'
-                            : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'
-                        }`}
-                        title={name}
-                      >
-                        {name} ({items.length})
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                {/* 右侧结果 */}
-                <div className='flex-1 min-w-0'>
-                  <div className='grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-x-3 gap-y-16 sm:gap-y-24'>
-                    {filteredResults.map((item) => (
-                      <div key={`${item.source}-${item.id}`} className='w-full'>
-                        <VideoCard
-                          id={item.id}
-                          title={item.title}
-                          poster={item.poster}
-                          episodes={item.episodes.length}
-                          source={item.source}
-                          source_name={item.source_name}
-                          douban_id={item.douban_id?.toString()}
-                          query={searchQuery.trim() !== item.title ? searchQuery.trim() : ''}
-                          year={item.year}
-                          from='search'
-                          type={item.episodes.length > 1 ? 'tv' : 'movie'}
-                        />
-                      </div>
-                    ))}
-                  </div>
-                  {filteredResults.length === 0 && selectedSource !== '全部' && (
-                    <div className='flex flex-col items-center justify-center py-16 text-gray-500 dark:text-gray-400'>
-                      <p className='text-lg'>该源无匹配结果</p>
-                    </div>
-                  )}
-                </div>
+              <div className='flex items-center justify-between mb-6'>
+                <h2 className='text-xl font-bold text-gray-800 dark:text-gray-200'>
+                  搜索结果 ({searchResults.length})
+                </h2>
+                {loadingSources && (
+                  <span className='text-xs text-gray-400 animate-pulse'>加载更多源...</span>
+                )}
               </div>
+              {searchResults.length === 0 ? (
+                <div className='flex flex-col items-center justify-center py-16 text-gray-500 dark:text-gray-400'>
+                  <Search className='w-12 h-12 mb-4 opacity-30' />
+                  <p className='text-lg'>未找到相关结果</p>
+                  <p className='text-sm mt-1 opacity-60'>换个关键词试试吧</p>
+                </div>
+              ) : (
+                /* 双列布局：左侧源列表，右侧结果 */
+                <div className='flex gap-4'>
+                  {/* 左侧源列表 ~1/5 宽 */}
+                  <div className='w-[18%] min-w-[100px] shrink-0'>
+                    <div className='sticky top-20 space-y-0.5'>
+                      {sourceGroups.map(([name, items]) => (
+                        <button
+                          key={name}
+                          onClick={() => setSelectedSource(name)}
+                          className={`w-full text-left px-2 py-2 rounded-md text-xs transition-colors truncate ${
+                            selectedSource === name
+                              ? 'bg-green-500/20 text-green-400 font-medium'
+                              : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'
+                          }`}
+                          title={name}
+                        >
+                          <span className='block truncate'>{name}</span>
+                          <span className='text-[10px] opacity-60'>{items.length} 项</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  {/* 右侧结果 - 列表 */}
+                  <div className='flex-1 min-w-0'>
+                    <div className='grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-3 gap-y-4 sm:gap-y-6'>
+                      {filteredResults.map((item) => (
+                        <div key={`${item.source}-${item.id}`} className='w-full'>
+                          <VideoCard
+                            id={item.id}
+                            title={item.title}
+                            poster={item.poster}
+                            episodes={item.episodes.length}
+                            source={item.source}
+                            source_name={item.source_name}
+                            douban_id={item.douban_id?.toString()}
+                            query={searchQuery.trim() !== item.title ? searchQuery.trim() : ''}
+                            year={item.year}
+                            from='search'
+                            type={item.episodes.length > 1 ? 'tv' : 'movie'}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                    {filteredResults.length === 0 && selectedSource && (
+                      <div className='flex flex-col items-center justify-center py-16 text-gray-500 dark:text-gray-400'>
+                        <p className='text-lg'>该源无匹配结果</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </section>
           ) : searchHistory.length > 0 ? (
             // 搜索历史

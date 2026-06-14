@@ -1,6 +1,6 @@
 'use client';
 
-import { CapacitorHttp, type HttpResponse } from '@capacitor/core';
+import { CapacitorHttp, type HttpResponse, Capacitor } from '@capacitor/core';
 import { Directory, Filesystem } from '@capacitor/filesystem';
 import { getDownloadSettings } from './settings';
 
@@ -335,7 +335,7 @@ export async function startDownload(taskId: string): Promise<void> {
       const safeLabel = task.episodeLabel.replace(/[/\\:*?"<>|]/g, '_').slice(0, 20);
       const dirPath = `Download/${safeTitle}/${safeLabel}`;
       try { await Filesystem.rmdir({ path: dirPath, directory: Directory.Data, recursive: true }); } catch { /* ignore */ }
-      try { await Filesystem.rmdir({ path: dirPath, directory: Directory.ExternalStorage, recursive: true }); } catch { /* ignore */ }
+      try { await Filesystem.rmdir({ path: dirPath, directory: Directory.Library, recursive: true }); } catch { /* ignore */ }
     }
   } finally {
     // 下载完成或失败后，尝试启动下一个等待中的任务
@@ -404,7 +404,6 @@ async function downloadHlsStream(taskId: string, playlistUrl: string, fileName: 
   const safeTitle = (task?.title || 'unknown').replace(/[/\\:*?"<>|]/g, '_').slice(0, 40);
   const safeLabel = (task?.episodeLabel || 'episode').replace(/[/\\:*?"<>|]/g, '_').slice(0, 20);
   const dirPath = `Download/${safeTitle}/${safeLabel}`;
-  const mergedFileName = 'video.ts';
 
   // 浏览器环境：下载所有片段到 IndexedDB
   if (!isCapacitor()) {
@@ -428,14 +427,24 @@ async function downloadHlsStream(taskId: string, playlistUrl: string, fileName: 
     return;
   }
 
-  // Capacitor 环境：下载所有片段到内存，合并保存为单个 ts 文件
-  const allBlobs: Blob[] = [];
+  // Capacitor 环境：逐段下载并保存到文件系统，生成 M3U8 播放列表
+  // 确定写入目录（Android 14+ 使用 Directory.Data 避免 scoped storage 问题）
+  let writeDir = Directory.Data;
+  try {
+    await Filesystem.mkdir({ path: dirPath, directory: Directory.Data, recursive: true });
+  } catch {
+    try {
+      await Filesystem.mkdir({ path: dirPath, directory: Directory.Library, recursive: true });
+      writeDir = Directory.Library;
+    } catch {
+      throw new Error('无法创建下载目录，请检查存储权限');
+    }
+  }
+
+  const segNames: string[] = [];
 
   for (let i = 0; i < segments.length; i++) {
-    if (signal?.aborted) {
-      for (const b of allBlobs) { try { (b as any).close?.(); } catch { /* ignore */ } }
-      throw new Error('下载已取消');
-    }
+    if (signal?.aborted) throw new Error('下载已取消');
 
     const segIndex = i + 1;
     updateDownloadTask(taskId, { speed: `下载片段 ${segIndex}/${segments.length}` });
@@ -449,7 +458,21 @@ async function downloadHlsStream(taskId: string, playlistUrl: string, fileName: 
     if (!blob) throw new Error(`下载第 ${segIndex} 个片段失败(重试3次): ${lastErr?.message || '未知错误'}`);
 
     totalDownloaded += blob.size;
-    allBlobs.push(blob);
+
+    // 逐个保存片段到文件系统（避免全部缓存到内存导致 OOM）
+    const arrayBuffer = await blob.arrayBuffer();
+    const base64 = arrayBufferToBase64(arrayBuffer);
+    const segName = `seg${String(segIndex).padStart(5, '0')}.ts`;
+    const segPath = `${dirPath}/${segName}`;
+
+    await Filesystem.writeFile({
+      path: segPath,
+      data: base64,
+      directory: writeDir,
+      recursive: true,
+    });
+
+    segNames.push(segName);
 
     updateDownloadTask(taskId, {
       progress: Math.round(((i + 1) / segments.length) * 100),
@@ -459,43 +482,50 @@ async function downloadHlsStream(taskId: string, playlistUrl: string, fileName: 
     });
   }
 
-  // 步骤 4: 合并所有片段
-  updateDownloadTask(taskId, { speed: '正在合并视频文件...' });
-  const mergedBlob = new Blob(allBlobs, { type: 'video/mp2t' });
+  // 生成 M3U8 播放列表，用 Capacitor.convertFileSrc 获取 WebView 可访问的 URL
+  updateDownloadTask(taskId, { speed: '生成播放列表...' });
 
-  // 释放原始 blobs
-  for (const b of allBlobs) { try { (b as any).close?.(); } catch { /* ignore */ } }
-
-  // 保存合并后的文件
-  updateDownloadTask(taskId, { speed: '正在保存视频文件...' });
-
-  // 确定写入目录
-  let writeDir = Directory.Data;
-  try {
-    await Filesystem.mkdir({ path: dirPath, directory: Directory.Data, recursive: true });
-  } catch {
-    await Filesystem.mkdir({ path: dirPath, directory: Directory.ExternalStorage, recursive: true });
-    writeDir = Directory.ExternalStorage;
+  const segUrls: string[] = [];
+  for (const name of segNames) {
+    const fullPath = `${dirPath}/${name}`;
+    try {
+      const uri = await Filesystem.getUri({ path: fullPath, directory: writeDir });
+      segUrls.push(Capacitor.convertFileSrc(uri.uri));
+    } catch {
+      segUrls.push(name);
+    }
   }
 
-  const arrayBuffer = await mergedBlob.arrayBuffer();
-  const base64 = arrayBufferToBase64(arrayBuffer);
-  const mergedPath = `${dirPath}/${mergedFileName}`;
+  const playlistContent = [
+    '#EXTM3U',
+    '#EXT-X-VERSION:3',
+    '#EXT-X-TARGETDURATION:10',
+    '#EXT-X-MEDIA-SEQUENCE:0',
+    '#EXT-X-PLAYLIST-TYPE:VOD',
+    ...segUrls.map((segUrl) => [
+      '#EXTINF:10.0,',
+      segUrl,
+    ].join('\n')),
+    '#EXT-X-ENDLIST',
+  ].join('\n');
+
+  const playlistName = 'playlist.m3u8';
+  const playlistPath = `${dirPath}/${playlistName}`;
 
   await Filesystem.writeFile({
-    path: mergedPath,
-    data: base64,
+    path: playlistPath,
+    data: playlistContent,
     directory: writeDir,
     recursive: true,
   });
 
-  // 获取文件 URI
+  // 获取播放列表 URI
   let localFileUri = '';
   try {
-    const uriResult = await Filesystem.getUri({ path: mergedPath, directory: writeDir });
-    localFileUri = uriResult.uri;
+    const uriResult = await Filesystem.getUri({ path: playlistPath, directory: writeDir });
+    localFileUri = Capacitor.convertFileSrc(uriResult.uri);
   } catch {
-    localFileUri = mergedPath;
+    localFileUri = playlistPath;
   }
 
   updateDownloadTask(taskId, {
@@ -504,7 +534,7 @@ async function downloadHlsStream(taskId: string, playlistUrl: string, fileName: 
     downloadedBytes: totalDownloaded,
     totalBytes: totalDownloaded,
     speed: '完成',
-    localPath: mergedPath,
+    localPath: playlistPath,
     localFileUri,
   });
 }
@@ -581,11 +611,13 @@ async function saveBlobToCapacitor(taskId: string, blob: Blob, fileName: string)
     result = await writeFile(Directory.Data);
   } catch {
     try {
-      result = await writeFile(Directory.ExternalStorage);
+      result = await writeFile(Directory.Library);
     } catch (e) {
       throw new Error(`保存文件失败: ${(e as Error).message}`);
     }
   }
+
+  const uri = Capacitor.convertFileSrc(result.uri);
 
   updateDownloadTask(taskId, {
     status: 'completed',
@@ -594,7 +626,7 @@ async function saveBlobToCapacitor(taskId: string, blob: Blob, fileName: string)
     totalBytes: blob.size,
     speed: '完成',
     localPath: result.uri,
-    localFileUri: result.uri,
+    localFileUri: uri,
   });
 }
 
