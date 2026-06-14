@@ -5,6 +5,7 @@
 import { ScreenOrientation } from '@capacitor/screen-orientation';
 import { StatusBar } from '@capacitor/status-bar';
 import { Directory, Filesystem } from '@capacitor/filesystem';
+import { Capacitor } from '@capacitor/core';
 import Artplayer from 'artplayer';
 import Hls from 'hls.js';
 import { Heart, Download } from 'lucide-react';
@@ -692,7 +693,7 @@ function PlayPageClient() {
       if (hasInitializedRef.current) return;
       hasInitializedRef.current = true;
 
-      // 本地文件播放：读分段合并为 Blob URL 直接播放（跳过 HLS.js）
+      // 本地文件播放：转换为 Capacitor 可访问 URL 后由 HLS.js 加载
       if (currentSource === 'local') {
         const dlTasks = getDownloadTasks();
         const dlTask = dlTasks.find(t => t.id === currentId);
@@ -713,44 +714,10 @@ function PlayPageClient() {
         } as any);
 
         try {
-          setLoadingMessage('读取本地视频片段...');
           const writeDirEnum = dlTask.writeDirectory === 'Library' ? Directory.Library : Directory.Data;
-          const dirPath = dlTask.localPath.replace(/\/[^/]+$/, '');
-
-          // 逐个读取片段并合并
-          const allBytes: Uint8Array[] = [];
-          for (let i = 1; i <= dlTask.segmentCount; i++) {
-            const segName = `seg${String(i).padStart(5, '0')}.ts`;
-            let base64 = '';
-            try {
-              const result = await Filesystem.readFile({ path: `${dirPath}/${segName}`, directory: writeDirEnum });
-              base64 = result.data as string;
-            } catch (e) {
-              setError(`读取片段 ${i} 失败: ${(e as Error).message}`);
-              setLoading(false);
-              return;
-            }
-            const binary = window.atob(base64);
-            const bytes = new Uint8Array(binary.length);
-            for (let j = 0; j < binary.length; j++) bytes[j] = binary.charCodeAt(j);
-            allBytes.push(bytes);
-            if (i % 10 === 0) {
-              setLoadingMessage(`读取本地视频片段... (${i}/${dlTask.segmentCount})`);
-            }
-          }
-
-          // 合并
-          setLoadingMessage('合并视频文件...');
-          const totalLen = allBytes.reduce((sum, arr) => sum + arr.length, 0);
-          const merged = new Uint8Array(totalLen);
-          let offset = 0;
-          for (const arr of allBytes) {
-            merged.set(arr, offset);
-            offset += arr.length;
-          }
-          const blob = new Blob([merged], { type: 'video/mp2t' });
-          const blobUrl = URL.createObjectURL(blob);
-          setVideoUrl(blobUrl);
+          const uriResult = await Filesystem.getUri({ path: dlTask.localPath, directory: writeDirEnum });
+          const localUrl = Capacitor.convertFileSrc(uriResult.uri);
+          setVideoUrl(localUrl);
           setLoading(false);
         } catch (e) {
           setError(`读取本地视频失败: ${(e as Error).message}`);

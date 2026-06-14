@@ -152,9 +152,11 @@ export default function VideoCard({
     return unsubscribe;
   }, [from, actualSource, actualId]);
 
-  // 图片加载失败时通过 CapacitorHttp 重试（绕过设备 SSL 证书问题）
+  // 豆瓣图片加载失败时通过 CapacitorHttp 重试（仅 doubanio.com 域名需要）
   useEffect(() => {
     if (!hasError || !actualPoster) return;
+    // 只有 doubanio.com 的图片才需要 CapacitorHttp 回退（带 Referer 头绕过防盗链）
+    if (!actualPoster.includes('doubanio.com')) return;
     let cancelled = false;
     (async () => {
       try {
@@ -165,9 +167,7 @@ export default function VideoCard({
           setIsLoading(true);
         }
       } catch {
-        if (!cancelled) {
-          // CapacitorHttp 也失败了，保持 hasError=true 显示占位图
-        }
+        // 也失败了，保持 hasError=true 显示占位图
       }
     })();
     return () => { cancelled = true; };

@@ -489,8 +489,19 @@ async function downloadHlsStream(taskId: string, playlistUrl: string, fileName: 
     }
   }
 
-  // 生成简单 M3U8 播放列表（相对路径，播放时由自定义 loader 处理）
+  // 生成 M3U8 播放列表，用 Capacitor.convertFileSrc 生成 WebView 可访问的 URL
   updateDownloadTask(taskId, { speed: '生成播放列表...' });
+
+  const segUrls: string[] = [];
+  for (const name of segNames) {
+    const fullPath = `${dirPath}/${name}`;
+    try {
+      const uri = await Filesystem.getUri({ path: fullPath, directory: writeDir });
+      segUrls.push(Capacitor.convertFileSrc(uri.uri));
+    } catch {
+      segUrls.push(name);
+    }
+  }
 
   const playlistContent = [
     '#EXTM3U',
@@ -498,9 +509,9 @@ async function downloadHlsStream(taskId: string, playlistUrl: string, fileName: 
     '#EXT-X-TARGETDURATION:10',
     '#EXT-X-MEDIA-SEQUENCE:0',
     '#EXT-X-PLAYLIST-TYPE:VOD',
-    ...segNames.map((seg) => [
+    ...segUrls.map((segUrl) => [
       '#EXTINF:10.0,',
-      seg,
+      segUrl,
     ].join('\n')),
     '#EXT-X-ENDLIST',
   ].join('\n');
@@ -515,7 +526,6 @@ async function downloadHlsStream(taskId: string, playlistUrl: string, fileName: 
     recursive: true,
   });
 
-  // 保存目录信息到任务
   const writeDirName = writeDir === Directory.Data ? 'Data' : 'Library';
 
   updateDownloadTask(taskId, {
@@ -524,8 +534,8 @@ async function downloadHlsStream(taskId: string, playlistUrl: string, fileName: 
     downloadedBytes: totalDownloaded,
     totalBytes: totalDownloaded,
     speed: '完成',
-    localPath: `${dirPath}/${playlistName}`,
-    localFileUri: `${dirPath}/${playlistName}`,
+    localPath: playlistPath,
+    localFileUri: playlistPath,
     writeDirectory: writeDirName,
     segmentCount: segments.length,
   });

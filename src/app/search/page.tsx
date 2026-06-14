@@ -74,13 +74,13 @@ function SearchPageClient() {
 
   const SEARCH_CACHE_KEY = 'moontv_search_cache';
 
-  const saveSearchCache = (query: string, results: any[]) => {
+  const saveSearchCache = (query: string, results: any[], order: string[]) => {
     try {
-      sessionStorage.setItem(SEARCH_CACHE_KEY, JSON.stringify({ query, results, time: Date.now() }));
+      sessionStorage.setItem(SEARCH_CACHE_KEY, JSON.stringify({ query, results, order, time: Date.now() }));
     } catch { /* ignore */ }
   };
 
-  const loadSearchCache = (): { query: string; results: any[] } | null => {
+  const loadSearchCache = (): { query: string; results: any[]; order: string[] } | null => {
     try {
       const raw = sessionStorage.getItem(SEARCH_CACHE_KEY);
       if (!raw) return null;
@@ -100,6 +100,7 @@ function SearchPageClient() {
   const [showResults, setShowResults] = useState(false);
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [sourceOrder, setSourceOrder] = useState<string[]>([]);
+  const [selectedSource, setSelectedSource] = useState<string>('');
   const [loadingSources, setLoadingSources] = useState(false);
 
   // 按源分组
@@ -111,9 +112,21 @@ function SearchPageClient() {
       arr.push(item);
       map.set(name, arr);
     });
-    // 按出现的先后顺序排列
     return sourceOrder.filter(name => map.has(name)).map(name => [name, map.get(name)!] as [string, any[]]);
   }, [searchResults, sourceOrder]);
+
+  // 当前选中源的结果
+  const filteredResults = useMemo(() => {
+    if (!selectedSource) return [];
+    return searchResults.filter((item) => (item.source_name || item.source) === selectedSource);
+  }, [searchResults, selectedSource]);
+
+  // 计算结果后自动选第一个源
+  useEffect(() => {
+    if (!selectedSource && sourceGroups.length > 0) {
+      setSelectedSource(sourceGroups[0][0]);
+    }
+  }, [sourceGroups, selectedSource]);
 
   useEffect(() => {
     // 无搜索参数时聚焦搜索框
@@ -180,6 +193,7 @@ function SearchPageClient() {
       if (cached && cached.query === query) {
         setSearchQuery(query);
         setSearchResults(cached.results);
+        if (cached.order) setSourceOrder(cached.order);
         setShowResults(true);
         lastSearchedQueryRef.current = query;
         setIsLoading(false);
@@ -226,6 +240,7 @@ function SearchPageClient() {
       setIsLoading(true);
       setSearchResults([]);
       setSourceOrder([]);
+      setSelectedSource('');
       setLoadingSources(true);
 
       const apiSites = await getAvailableApiSites();
@@ -254,7 +269,7 @@ function SearchPageClient() {
       await Promise.all(sourcePromises);
 
       if (allResults.length > 0) {
-        saveSearchCache(query, dedupeResults(allResults));
+        saveSearchCache(query, dedupeResults(allResults), arrivedSources);
       }
       setIsLoading(false);
       setLoadingSources(false);
@@ -352,14 +367,34 @@ function SearchPageClient() {
                   <p className='text-sm mt-1 opacity-60'>换个关键词试试吧</p>
                 </div>
               ) : (
-                <div className='space-y-8'>
-                  {sourceGroups.map(([sourceName, items]) => (
-                    <div key={sourceName}>
-                      <h3 className='text-sm font-semibold text-gray-500 dark:text-gray-400 mb-3 pl-1'>
-                        {sourceName} ({items.length})
-                      </h3>
+                <div className='flex gap-4'>
+                  {/* 左侧源列表 */}
+                  <div className='w-40 shrink-0'>
+                    <div className='sticky top-20 space-y-0.5'>
+                      {sourceGroups.map(([name, items]) => (
+                        <button
+                          key={name}
+                          onClick={() => setSelectedSource(name)}
+                          className={`w-full text-left px-2.5 py-2 rounded-md text-xs transition-colors ${
+                            selectedSource === name
+                              ? 'bg-green-500/20 text-green-400 font-medium'
+                              : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'
+                          }`}
+                          title={name}
+                        >
+                          <span className='block truncate'>{name}</span>
+                          <span className='text-[10px] opacity-60'>{items.length} 项</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  {/* 右侧结果 - 行式布局 */}
+                  <div className='flex-1 min-w-0'>
+                    {!selectedSource ? (
+                      <div className='flex items-center justify-center py-16 text-gray-500 text-sm'>选择左侧源查看结果</div>
+                    ) : (
                       <div className='space-y-2'>
-                        {items.map((item: SearchResult) => (
+                        {filteredResults.map((item: SearchResult) => (
                           <ResultRow
                             key={`${item.source}-${item.id}`}
                             item={item}
@@ -371,9 +406,12 @@ function SearchPageClient() {
                             }}
                           />
                         ))}
+                        {filteredResults.length === 0 && (
+                          <div className='flex items-center justify-center py-16 text-gray-500 text-sm'>该源无匹配结果</div>
+                        )}
                       </div>
-                    </div>
-                  ))}
+                    )}
+                  </div>
                 </div>
               )}
             </section>

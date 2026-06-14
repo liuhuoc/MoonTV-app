@@ -653,7 +653,7 @@ export default function SettingsPage() {
 
                           {/* 源信息 */}
                           <div className='min-w-0 flex-1'>
-                            <div className='flex items-center gap-2'>
+                            <div className='flex items-center gap-1.5'>
                               <h4 className='text-sm font-medium text-gray-700 dark:text-gray-300 truncate'>
                                 {source.name}
                               </h4>
@@ -661,19 +661,21 @@ export default function SettingsPage() {
                                 <span className='text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-500 flex-shrink-0'>自定义</span>
                               )}
                             </div>
-                            <p className='text-xs text-gray-400 dark:text-gray-500 truncate'>
+                            <p className='text-[11px] text-gray-400 dark:text-gray-500 truncate max-w-[280px]' title={host}>
                               {host}
-                              {status?.status === 'error' && status?.errorMessage && (
-                                <span className='text-red-500 ml-1'>- {status.errorMessage}</span>
-                              )}
-                              {status?.status === 'ok' && (
-                                <span className='text-green-500 ml-1'>
-                                  {status.quality ? `${status.quality} ` : ''}
-                                  {status.loadSpeed ? `${status.loadSpeed} ` : ''}
-                                  {status.latency ? `${status.latency}ms` : '连接正常'}
-                                </span>
-                              )}
                             </p>
+                            {(status?.status === 'ok' || status?.status === 'error') && (
+                              <p className='text-[11px] mt-0.5'>
+                                {status?.status === 'ok' && (
+                                  <span className='text-green-500'>
+                                    {[status.quality, status.loadSpeed, status.latency ? `${status.latency}ms` : ''].filter(Boolean).join(' ')}
+                                  </span>
+                                )}
+                                {status?.status === 'error' && status?.errorMessage && (
+                                  <span className='text-red-500'>{status.errorMessage}</span>
+                                )}
+                              </p>
+                            )}
                           </div>
                         </div>
 
