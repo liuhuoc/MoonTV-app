@@ -14,7 +14,6 @@ export default function SettingsPage() {
   const [mounted, setMounted] = useState(false);
 
   // 设置相关状态
-  const [defaultAggregateSearch, setDefaultAggregateSearch] = useState(true);
   const [enableOptimization, setEnableOptimization] = useState(true);
   const [doubanProxyUrl, setDoubanProxyUrl] = useState('');
   const [imageProxyUrl, setImageProxyUrl] = useState('');
@@ -106,9 +105,6 @@ export default function SettingsPage() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    const savedAggregateSearch = localStorage.getItem('defaultAggregateSearch');
-    if (savedAggregateSearch !== null) setDefaultAggregateSearch(JSON.parse(savedAggregateSearch));
-
     const savedEnableDoubanProxy = localStorage.getItem('enableDoubanProxy');
     if (savedEnableDoubanProxy !== null) setEnableDoubanProxy(JSON.parse(savedEnableDoubanProxy));
 
@@ -158,7 +154,6 @@ export default function SettingsPage() {
   };
 
   const handleResetSettings = () => {
-    setDefaultAggregateSearch(true);
     setEnableOptimization(true);
     setDoubanProxyUrl('');
     setEnableDoubanProxy(false);
@@ -168,7 +163,6 @@ export default function SettingsPage() {
     setAutoCleanup(true);
 
     if (typeof window !== 'undefined') {
-      localStorage.setItem('defaultAggregateSearch', JSON.stringify(true));
       localStorage.setItem('enableOptimization', JSON.stringify(true));
       localStorage.setItem('doubanProxyUrl', '');
       localStorage.setItem('enableDoubanProxy', JSON.stringify(false));
@@ -425,15 +419,6 @@ export default function SettingsPage() {
             <SectionHeader id='search' title='搜索设置' icon={<svg className='w-4 h-4 text-blue-500' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2'><circle cx='11' cy='11' r='8'/><line x1='21' y1='21' x2='16.65' y2='16.65'/></svg>} />
             {expandedSections.has('search') && (
               <div className='px-4 pb-4 space-y-4 border-b border-gray-100 dark:border-gray-800'>
-                <ToggleSwitch
-                  checked={defaultAggregateSearch}
-                  onChange={(v) => {
-                    setDefaultAggregateSearch(v);
-                    saveToStorage('defaultAggregateSearch', JSON.stringify(v));
-                  }}
-                  label='默认聚合搜索结果'
-                  description='搜索时默认按标题和年份聚合显示结果'
-                />
               </div>
             )}
 

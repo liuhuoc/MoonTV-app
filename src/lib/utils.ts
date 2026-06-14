@@ -54,7 +54,8 @@ export function getImageProxyUrl(): string | null {
 }
 
 /**
- * 处理图片 URL - 直接返回原 URL，豆瓣图片可直连
+ * 处理图片 URL
+ * 豆瓣图片 URL 可能以 .jpg 结尾但实际是 webp 格式，自动修正后缀
  */
 export function processImageUrl(originalUrl: string): string {
   if (!originalUrl) {
@@ -62,19 +63,27 @@ export function processImageUrl(originalUrl: string): string {
     return originalUrl;
   }
 
+  let url = originalUrl;
+
+  // 豆瓣 CDN 图片修正：.jpg 后缀实际是 webp 格式
+  if (url.includes('doubanio.com') && /\.jpg(\?|$)/i.test(url)) {
+    url = url.replace(/\.jpg(\?|$)/i, '.webp$1');
+    console.log('[图片处理] 豆瓣后缀修正 jpg→webp:', url.substring(0, 100));
+  }
+
   const proxyUrl = getImageProxyUrl();
   if (proxyUrl) {
     const result = proxyUrl.includes('{url}') || proxyUrl.includes('%7Burl%7D')
       ? proxyUrl
-        .replace('{url}', encodeURIComponent(originalUrl))
-        .replace('%7Burl%7D', encodeURIComponent(originalUrl))
-      : `${proxyUrl}${encodeURIComponent(originalUrl)}`;
+        .replace('{url}', encodeURIComponent(url))
+        .replace('%7Burl%7D', encodeURIComponent(url))
+      : `${proxyUrl}${encodeURIComponent(url)}`;
     console.log('[图片处理] 代理模式:', result.substring(0, 100));
     return result;
   }
 
-  console.log('[图片处理] 直连:', originalUrl.substring(0, 100));
-  return originalUrl;
+  console.log('[图片处理] 直连:', url.substring(0, 100));
+  return url;
 }
 
 /**

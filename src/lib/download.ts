@@ -344,7 +344,7 @@ export async function startDownload(taskId: string): Promise<void> {
   }
 }
 
-/** HLS 流下载（下载所有 ts 片段并合并为一个文件） */
+/** HLS 流下载（下载所有 ts 片段合并为单个文件） */
 async function downloadHlsStream(taskId: string, playlistUrl: string, fileName: string, signal?: AbortSignal): Promise<void> {
   const fetchM3u8Content = async (url: string): Promise<string> => {
     if (isCapacitor()) {
@@ -394,17 +394,80 @@ async function downloadHlsStream(taskId: string, playlistUrl: string, fileName: 
     speed: '解析中...',
   });
 
-  // 步骤 3: 下载所有片段并逐个保存到文件系统
+  // 步骤 3: 下载所有片段到内存，合并保存为单个文件
   let totalDownloaded = 0;
 
   if (signal?.aborted) throw new Error('下载已取消');
 
-  // 准备文件系统写入路径
   const tasks = getDownloadTasks();
   const task = tasks.find(t => t.id === taskId);
   const safeTitle = (task?.title || 'unknown').replace(/[/\\:*?"<>|]/g, '_').slice(0, 40);
   const safeLabel = (task?.episodeLabel || 'episode').replace(/[/\\:*?"<>|]/g, '_').slice(0, 20);
   const dirPath = `Download/${safeTitle}/${safeLabel}`;
+  const mergedFileName = 'video.ts';
+
+  // 浏览器环境：下载所有片段到 IndexedDB
+  if (!isCapacitor()) {
+    for (let i = 0; i < segments.length; i++) {
+      if (signal?.aborted) throw new Error('下载已取消');
+      const segIndex = i + 1;
+      updateDownloadTask(taskId, { speed: `下载片段 ${segIndex}/${segments.length}` });
+      let blob: Blob | null = null;
+      let lastErr: Error | null = null;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try { blob = await downloadSegment(segments[i], signal); break; }
+        catch (err) { lastErr = err as Error; if (attempt < 3 && !signal?.aborted) await new Promise(r => setTimeout(r, 1000 * attempt)); }
+      }
+      if (!blob) throw new Error(`下载第 ${segIndex} 个片段失败(重试3次): ${lastErr?.message || '未知错误'}`);
+      await saveSegmentToIndexedDB(taskId, segIndex, blob);
+      totalDownloaded += blob.size;
+      updateDownloadTask(taskId, { progress: Math.round(((i + 1) / segments.length) * 100), downloadedBytes: totalDownloaded, totalBytes: totalDownloaded, speed: `${segIndex}/${segments.length} 片段` });
+    }
+    updateDownloadTask(taskId, { speed: '正在合并片段...' });
+    await mergeAndSaveBrowser(taskId, segments.length, fileName);
+    return;
+  }
+
+  // Capacitor 环境：下载所有片段到内存，合并保存为单个 ts 文件
+  const allBlobs: Blob[] = [];
+
+  for (let i = 0; i < segments.length; i++) {
+    if (signal?.aborted) {
+      for (const b of allBlobs) { try { (b as any).close?.(); } catch { /* ignore */ } }
+      throw new Error('下载已取消');
+    }
+
+    const segIndex = i + 1;
+    updateDownloadTask(taskId, { speed: `下载片段 ${segIndex}/${segments.length}` });
+
+    let blob: Blob | null = null;
+    let lastErr: Error | null = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try { blob = await downloadSegment(segments[i], signal); break; }
+      catch (err) { lastErr = err as Error; if (attempt < 3 && !signal?.aborted) await new Promise(r => setTimeout(r, 1000 * attempt)); }
+    }
+    if (!blob) throw new Error(`下载第 ${segIndex} 个片段失败(重试3次): ${lastErr?.message || '未知错误'}`);
+
+    totalDownloaded += blob.size;
+    allBlobs.push(blob);
+
+    updateDownloadTask(taskId, {
+      progress: Math.round(((i + 1) / segments.length) * 100),
+      downloadedBytes: totalDownloaded,
+      totalBytes: totalDownloaded,
+      speed: `${segIndex}/${segments.length} 片段`,
+    });
+  }
+
+  // 步骤 4: 合并所有片段
+  updateDownloadTask(taskId, { speed: '正在合并视频文件...' });
+  const mergedBlob = new Blob(allBlobs, { type: 'video/mp2t' });
+
+  // 释放原始 blobs
+  for (const b of allBlobs) { try { (b as any).close?.(); } catch { /* ignore */ } }
+
+  // 保存合并后的文件
+  updateDownloadTask(taskId, { speed: '正在保存视频文件...' });
 
   // 确定写入目录
   let writeDir = Directory.Data;
@@ -415,120 +478,34 @@ async function downloadHlsStream(taskId: string, playlistUrl: string, fileName: 
     writeDir = Directory.ExternalStorage;
   }
 
-  // 获取目录的绝对文件路径用于 m3u8
-  let baseFileUri = '';
-  try {
-    const uriResult = await Filesystem.getUri({ path: dirPath, directory: writeDir });
-    baseFileUri = uriResult.uri;
-    if (!baseFileUri.endsWith('/')) baseFileUri += '/';
-  } catch {
-    // getUri 可能失败，回退到构造路径
-    baseFileUri = `file:///${dirPath}/`;
-  }
-
-  const segFilePaths: string[] = [];
-
-  for (let i = 0; i < segments.length; i++) {
-    const segUrl = segments[i];
-    const segIndex = i + 1;
-
-    if (signal?.aborted) throw new Error('下载已取消');
-
-    updateDownloadTask(taskId, {
-      speed: `下载片段 ${segIndex}/${segments.length}`,
-    });
-
-    let blob: Blob | null = null;
-    let lastErr: Error | null = null;
-
-    // 单个片段最多重试 3 次
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        blob = await downloadSegment(segUrl, signal);
-        break;
-      } catch (err) {
-        lastErr = err as Error;
-        if (attempt < 3 && !signal?.aborted) {
-          await new Promise(r => setTimeout(r, 1000 * attempt));
-        }
-      }
-    }
-
-    if (!blob) {
-      throw new Error(`下载第 ${segIndex} 个片段失败(重试3次): ${lastErr?.message || '未知错误'}`);
-    }
-
-    totalDownloaded += blob.size;
-
-    // 逐个保存片段到文件系统（避免全部合并后 OOM）
-    if (isCapacitor()) {
-      const arrayBuffer = await blob.arrayBuffer();
-      const base64 = arrayBufferToBase64(arrayBuffer);
-      const segRelPath = `${dirPath}/seg${String(segIndex).padStart(5, '0')}.ts`;
-
-      await Filesystem.writeFile({
-        path: segRelPath,
-        data: base64,
-        directory: writeDir,
-        recursive: true,
-      });
-
-      segFilePaths.push(baseFileUri + `seg${String(segIndex).padStart(5, '0')}.ts`);
-    } else {
-      // 浏览器环境：保存到 IndexedDB
-      await saveSegmentToIndexedDB(taskId, segIndex, blob);
-    }
-
-    const progress = Math.round(((i + 1) / segments.length) * 100);
-    updateDownloadTask(taskId, {
-      progress,
-      downloadedBytes: totalDownloaded,
-      totalBytes: totalDownloaded,
-      speed: `${formatBytes(totalDownloaded)} / ${segIndex}/${segments.length} 片段`,
-    });
-  }
-
-  // 步骤 4: 合并并保存（浏览器环境）
-  if (!isCapacitor()) {
-    updateDownloadTask(taskId, { speed: '正在合并片段...' });
-    await mergeAndSaveBrowser(taskId, segments.length, fileName);
-    return;
-  }
-
-  // Capacitor 环境：生成本地 m3u8 播放列表指向已保存的片段
-  updateDownloadTask(taskId, { speed: '生成播放列表...' });
-
-  const playlistContent = [
-    '#EXTM3U',
-    '#EXT-X-VERSION:3',
-    '#EXT-X-TARGETDURATION:10',
-    '#EXT-X-MEDIA-SEQUENCE:0',
-    '#EXT-X-PLAYLIST-TYPE:VOD',
-    ...segFilePaths.map((segUri) => [
-      '#EXTINF:10.0,',
-      segUri,
-    ].join('\n')),
-    '#EXT-X-ENDLIST',
-  ].join('\n');
-
-  const m3u8Path = `${dirPath}/playlist.m3u8`;
+  const arrayBuffer = await mergedBlob.arrayBuffer();
+  const base64 = arrayBufferToBase64(arrayBuffer);
+  const mergedPath = `${dirPath}/${mergedFileName}`;
 
   await Filesystem.writeFile({
-    path: m3u8Path,
-    data: playlistContent,
+    path: mergedPath,
+    data: base64,
     directory: writeDir,
     recursive: true,
   });
 
-  const finalPath = baseFileUri + 'playlist.m3u8';
+  // 获取文件 URI
+  let localFileUri = '';
+  try {
+    const uriResult = await Filesystem.getUri({ path: mergedPath, directory: writeDir });
+    localFileUri = uriResult.uri;
+  } catch {
+    localFileUri = mergedPath;
+  }
+
   updateDownloadTask(taskId, {
     status: 'completed',
     progress: 100,
     downloadedBytes: totalDownloaded,
     totalBytes: totalDownloaded,
     speed: '完成',
-    localPath: finalPath,
-    localFileUri: finalPath,
+    localPath: mergedPath,
+    localFileUri,
   });
 }
 

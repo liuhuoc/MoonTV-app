@@ -4,6 +4,7 @@
 
 import { ScreenOrientation } from '@capacitor/screen-orientation';
 import { StatusBar } from '@capacitor/status-bar';
+import { Directory, Filesystem } from '@capacitor/filesystem';
 import Artplayer from 'artplayer';
 import Hls from 'hls.js';
 import { Heart, Download } from 'lucide-react';
@@ -691,27 +692,50 @@ function PlayPageClient() {
       if (hasInitializedRef.current) return;
       hasInitializedRef.current = true;
 
-      // 本地文件播放：直接从下载任务获取文件路径
+      // 本地文件播放：从 Capacitor Filesystem 读取并创建 Blob URL 直接播放
       if (currentSource === 'local') {
         const dlTasks = getDownloadTasks();
         const dlTask = dlTasks.find(t => t.id === currentId);
-        if (dlTask?.localFileUri) {
-          setVideoUrl(dlTask.localFileUri);
-          setVideoTitle(dlTask.title || '');
-          setVideoCover(dlTask.poster || '');
-          setDetail({
-            id: dlTask.id,
-            title: dlTask.title,
-            source: 'local',
-            source_name: '本地文件',
-            episodes: [dlTask.localFileUri],
-            douban_id: 0,
-          } as any);
+        if (!dlTask?.localPath) {
+          setError('未找到已下载的文件');
           setLoading(false);
           return;
         }
-        setError('未找到已下载的文件');
-        setLoading(false);
+        setVideoTitle(dlTask.title || '');
+        setVideoCover(dlTask.poster || '');
+        setDetail({
+          id: dlTask.id,
+          title: dlTask.title,
+          source: 'local',
+          source_name: '本地文件',
+          episodes: [dlTask.localPath],
+          douban_id: 0,
+        } as any);
+
+        try {
+          // 从 Capacitor Filesystem 读取视频文件
+          let base64 = '';
+          try {
+            const result = await Filesystem.readFile({ path: dlTask.localPath, directory: Directory.Data });
+            base64 = result.data as string;
+          } catch {
+            const result = await Filesystem.readFile({ path: dlTask.localPath, directory: Directory.ExternalStorage });
+            base64 = result.data as string;
+          }
+
+          // base64 → ArrayBuffer → Blob → Object URL
+          const binaryStr = atob(base64);
+          const bytes = new Uint8Array(binaryStr.length);
+          for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+          const blob = new Blob([bytes], { type: 'video/mp2t' });
+          const blobUrl = URL.createObjectURL(blob);
+
+          setVideoUrl(blobUrl);
+          setLoading(false);
+        } catch (e) {
+          setError(`读取本地视频失败: ${(e as Error).message}`);
+          setLoading(false);
+        }
         return;
       }
 
