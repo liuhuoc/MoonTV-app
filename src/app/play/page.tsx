@@ -547,12 +547,15 @@ function createLocalSegmentLoader() {
 
     load(context: any, _config: any, callbacks: any) {
       const url: string = context.url || '';
+      console.log(`[LocalLoader] load() url=${url}`);
 
       if (url.startsWith('local://segment/')) {
         const segIdx = url.replace('local://segment/', '');
-        const segFileName = `seg_${String(parseInt(segIdx, 10)).padStart(5, '0')}.ts`;
+        const segNum = parseInt(segIdx, 10);
+        const segFileName = `seg_${String(segNum).padStart(5, '0')}.ts`;
         // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
         const segPath = `${ctx!.dirPath}/${segFileName}`;
+        console.log(`[LocalLoader] 读片段: ${segFileName} (path=${segPath})`);
 
         // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
         Filesystem.readFile({ path: segPath, directory: ctx!.writeDirEnum as any })
@@ -561,35 +564,41 @@ function createLocalSegmentLoader() {
             const bytes = atob(base64);
             const arr = new Uint8Array(bytes.length);
             for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
+            console.log(`[LocalLoader] 片段 ${segNum} 读取成功: ${arr.length} bytes`);
             const stats = {
               aborted: false, loaded: arr.length, total: arr.length, retry: 0, chunkCount: 1,
               bwEstimate: 0, loading: { start: performance.now(), first: performance.now(), end: performance.now() },
               parsing: { start: 0, end: 0 }, buffering: { start: 0, first: 0, end: 0 },
               ...(context.stats || {}),
             };
-            callbacks.onSuccess({ url, data: arr.buffer }, stats, context);
+            callbacks.onSuccess({ url, data: arr.buffer }, stats, context, null);
           })
           .catch((err: any) => {
-            callbacks.onError({ code: 404, text: (err as Error).message }, context, null);
+            console.error(`[LocalLoader] 片段 ${segNum} 读取失败: ${(err as Error).message || JSON.stringify(err)}`);
+            callbacks.onError({ code: 404, text: (err as Error).message || '读取失败' }, context, null);
           });
       } else {
         // 非 local:// URL，使用 fetch 加载（blob: URL 的 M3U8 清单）
+        console.log(`[LocalLoader] fetch: ${url.substring(0, 80)}...`);
         fetch(url, { headers: context.headers as Record<string, string> | undefined } as any)
           .then((resp: any) => {
             if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            console.log(`[LocalLoader] fetch 成功: ${resp.status}, 开始读body`);
             return resp.arrayBuffer();
           })
           .then((data: ArrayBuffer) => {
+            console.log(`[LocalLoader] fetch body: ${data.byteLength} bytes`);
             const stats = {
               aborted: false, loaded: data.byteLength, total: data.byteLength, retry: 0, chunkCount: 1,
               bwEstimate: 0, loading: { start: performance.now(), first: performance.now(), end: performance.now() },
               parsing: { start: 0, end: 0 }, buffering: { start: 0, first: 0, end: 0 },
               ...(context.stats || {}),
             };
-            callbacks.onSuccess({ url, data }, stats, context);
+            callbacks.onSuccess({ url, data }, stats, context, null);
           })
           .catch((err: any) => {
-            callbacks.onError({ code: 0, text: (err as Error).message }, context, null);
+            console.error(`[LocalLoader] fetch 失败: ${(err as Error).message || JSON.stringify(err)}`);
+            callbacks.onError({ code: 0, text: (err as Error).message || 'fetch失败' }, context, null);
           });
       }
     }
@@ -1537,6 +1546,8 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
                 return;
               }
 
+              console.log(`[customType.m3u8] 被调用\n  url: ${url}\n  本地播放: ${isLocalPlayback}`);
+
               if (video.hls) {
                 video.hls.destroy();
               }
@@ -1556,6 +1567,18 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
                   : blockAdEnabledRef.current
                   ? CustomHlsJsLoader
                   : Hls.DefaultConfig.loader,
+              });
+
+              hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                console.log(`[HLS] MANIFEST_PARSED: 成功解析播放列表`);
+              });
+
+              // 监听分段加载事件
+              hls.on(Hls.Events.FRAG_LOADING, (_event: any, data: any) => {
+                console.log(`[HLS] FRAG_LOADING: ${data.frag?.url || 'N/A'}`);
+              });
+              hls.on(Hls.Events.FRAG_LOADED, (_event: any, data: any) => {
+                console.log(`[HLS] FRAG_LOADED: ${data.frag?.url || 'N/A'}`);
               });
 
               hls.loadSource(url);
