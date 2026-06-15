@@ -1497,7 +1497,7 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
       artPlayerRef.current = new Artplayer({
         container: artRef.current,
         url: videoUrl,
-        type: isLocalPlayback ? 'm3u8' : undefined,
+        ...(isLocalPlayback ? { type: 'm3u8' } : {}),
         poster: videoCover,
         volume: 0.7,
         isLive: false,
