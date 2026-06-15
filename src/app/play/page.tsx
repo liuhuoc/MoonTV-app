@@ -755,7 +755,7 @@ function PlayPageClient() {
               totalBytes += segBytes.length;
               setLoadingMessage(`正在加载本地视频... (${i + 1}/${segCount})`);
             } catch (segErr) {
-              console.warn(`读取片段 ${segFileName} 失败:`, segErr);
+              console.warn(`读取片段 ${segFileName} 失败: ${(segErr as Error).message}`);
               // 继续尝试读取后续片段
             }
           }
@@ -772,6 +772,9 @@ function PlayPageClient() {
             offset += seg.length;
           }
 
+          console.log(
+            `本地视频加载诊断:\n  片段数: ${segments.length}/${segCount}\n  总大小: ${(totalBytes / 1024 / 1024).toFixed(2)} MB\n  首位字节: ${merged[0]?.toString(16) || 'N/A'}\n  末位字节: ${merged[merged.length - 1]?.toString(16) || 'N/A'}`
+          );
           const mergedBlob = new Blob([merged], { type: 'video/mp2t' });
           const blobUrl = URL.createObjectURL(mergedBlob);
           setVideoUrl(blobUrl);
@@ -1523,7 +1526,19 @@ function PlayPageClient() {
                 if (data.details === 'bufferFullError') {
                   return;
                 }
-                console.error('HLS Error:', data.type, data.details);
+
+                // 详细错误信息
+                const errInfo = `HLS Error [${data.type}] ${data.details}`;
+                const urlInfo = data.url ? `\n  URL: ${data.url}` : '';
+                const responseInfo = data.response ? `\n  HTTP状态: ${data.response.code || 'N/A'}, URL: ${data.response.url || 'N/A'}` : '';
+
+                // SSL/网络错误通常是源头问题，不作为严重错误日志（因为可能有其他集数可用）
+                if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+                  console.warn(`${errInfo}${urlInfo}${responseInfo}`);
+                } else {
+                  console.error(`${errInfo}${urlInfo}${responseInfo}`);
+                }
+
                 if (data.fatal) {
                   switch (data.type) {
                     case Hls.ErrorTypes.NETWORK_ERROR:
@@ -1735,11 +1750,51 @@ function PlayPageClient() {
       });
 
       artPlayerRef.current.on('error', (err: any) => {
-        console.error('播放器错误:', err);
+        // 尝试获取底层 video 元素的详细错误信息
+        const videoEl = artPlayerRef.current?.video as HTMLVideoElement | undefined;
+        let detail = '';
+        if (videoEl) {
+          const mediaError = videoEl.error;
+          if (mediaError) {
+            const codes: Record<number, string> = {
+              1: 'MEDIA_ERR_ABORTED - 加载被中断',
+              2: 'MEDIA_ERR_NETWORK - 网络错误',
+              3: 'MEDIA_ERR_DECODE - 解码错误',
+              4: 'MEDIA_ERR_SRC_NOT_SUPPORTED - 视频格式不支持',
+              5: 'MEDIA_ERR_ENCRYPTED - 视频加密(DRM)',
+            };
+            detail = `\n  video.error.code=${mediaError.code} (${codes[mediaError.code] || '未知'})`;
+            if (mediaError.message) {
+              detail += `\n  video.error.message=${mediaError.message}`;
+            }
+          }
+        }
+        console.error(
+          `播放器错误 [${isLocalPlayback ? '本地' : '在线'}]${detail}\n  URL: ${videoUrl}\n  原始错误: ${JSON.stringify(err)}`
+        );
         if (artPlayerRef.current.currentTime > 0) {
           return;
         }
+        // 尝试自动切换到下一个可用集数（仅远程源）
+        if (!isLocalPlayback) {
+          const d = detailRef.current;
+          const idx = currentEpisodeIndexRef.current;
+          if (d?.episodes && idx < d.episodes.length - 1) {
+            console.log(`自动切换到下一集 ${idx + 2}`);
+            setCurrentEpisodeIndex(idx + 1);
+          }
+        }
       });
+
+      // 监听 video 元素原生错误事件（更底层的错误捕获）
+      if (artPlayerRef.current?.video) {
+        const videoEl = artPlayerRef.current.video as HTMLVideoElement;
+        videoEl.addEventListener('error', (e) => {
+          console.error(
+            `video.onerror 事件:\n  URL: ${videoEl.currentSrc || videoUrl}\n  code: ${videoEl.error?.code || 'N/A'}\n  message: ${videoEl.error?.message || 'N/A'}`
+          );
+        });
+      }
 
       // 监听视频播放结束事件，自动播放下一集
       artPlayerRef.current.on('video:ended', () => {
@@ -2021,7 +2076,9 @@ function PlayPageClient() {
         );
       }
     } catch (err) {
-      console.error('创建播放器失败:', err);
+      console.error(
+        `创建播放器失败:\n  URL: ${videoUrl}\n  本地播放: ${isLocalPlayback}\n  错误: ${(err as Error).message || JSON.stringify(err)}`
+      );
       setError('播放器初始化失败');
     }
   }, [Artplayer, Hls, videoUrl, loading, blockAdEnabled, isLocalPlayback]);
