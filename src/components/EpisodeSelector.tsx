@@ -52,6 +52,8 @@ interface EpisodeSelectorProps {
   episodes?: string[];
   /** 下载按钮点击回调 */
   onDownloadClick?: () => void;
+  /** 是否显示换源 Tab，默认 true */
+  showSourceTab?: boolean;
 }
 
 /**
@@ -74,6 +76,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
   onDownloadEpisode,
   episodes,
   onDownloadClick,
+  showSourceTab = true,
 }) => {
   const router = useRouter();
   const pageCount = Math.ceil(totalEpisodes / episodesPerPage);
@@ -104,6 +107,12 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
   const [activeTab, setActiveTab] = useState<'episodes' | 'sources'>(
     totalEpisodes > 1 ? 'episodes' : 'sources'
   );
+  // 如果换源 Tab 被隐藏，强制切换到 episodes
+  useEffect(() => {
+    if (!showSourceTab && activeTab === 'sources') {
+      setActiveTab('episodes');
+    }
+  }, [showSourceTab, activeTab]);
 
   // 当前分页索引（0 开始）
   const initialPage = Math.floor((value - 1) / episodesPerPage);
@@ -322,18 +331,20 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
             选集
           </div>
         )}
-        <div
-          onClick={handleSourceTabClick}
-          className={`flex-1 py-3 px-6 text-center cursor-pointer transition-all duration-200 font-medium
-            ${
-              activeTab === 'sources'
-                ? 'text-green-600 dark:text-green-400'
-                : 'text-gray-700 hover:text-green-600 bg-black/5 dark:bg-white/5 dark:text-gray-300 dark:hover:text-green-400 hover:bg-black/3 dark:hover:bg-white/3'
-            }
-          `.trim()}
-        >
-          换源
-        </div>
+        {showSourceTab && (
+          <div
+            onClick={handleSourceTabClick}
+            className={`flex-1 py-3 px-6 text-center cursor-pointer transition-all duration-200 font-medium
+              ${
+                activeTab === 'sources'
+                  ? 'text-green-600 dark:text-green-400'
+                  : 'text-gray-700 hover:text-green-600 bg-black/5 dark:bg-white/5 dark:text-gray-300 dark:hover:text-green-400 hover:bg-black/3 dark:hover:bg-white/3'
+              }
+            `.trim()}
+          >
+            换源
+          </div>
+        )}
       </div>
 
       {/* 选集 Tab 内容 */}

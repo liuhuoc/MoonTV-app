@@ -701,6 +701,14 @@ function PlayPageClient() {
           setLoading(false);
           return;
         }
+
+        // 修复：兼容旧版 localPath 格式（缺少 video.ts 文件名）
+        let filePath = dlTask.localPath;
+        if (!filePath.endsWith('.ts') && !filePath.match(/\.\w+$/)) {
+          // 如果 localPath 是目录路径，追加 video.ts
+          filePath = filePath.replace(/\/$/, '') + '/video.ts';
+        }
+
         setVideoTitle(dlTask.title || '');
         setVideoCover(dlTask.poster || '');
         setDetail({
@@ -708,14 +716,14 @@ function PlayPageClient() {
           title: dlTask.title,
           source: 'local',
           source_name: '本地文件',
-          episodes: [dlTask.localPath],
+          episodes: [filePath],
           douban_id: 0,
         } as any);
 
         try {
           setLoadingMessage('正在加载本地视频...');
           const writeDirEnum = dlTask.writeDirectory === 'Library' ? Directory.Library : Directory.Data;
-          const result = await Filesystem.readFile({ path: dlTask.localPath, directory: writeDirEnum });
+          const result = await Filesystem.readFile({ path: filePath, directory: writeDirEnum });
           const base64 = result.data as string;
           const binaryStr = atob(base64);
           const bytes = new Uint8Array(binaryStr.length);
@@ -1295,6 +1303,9 @@ function PlayPageClient() {
         showConfirmButton: false,
         timer: 2500,
         timerProgressBar: true,
+        didOpen: (popup) => {
+          (popup as HTMLElement).style.paddingTop = 'calc(env(safe-area-inset-top, 20px) + 12px)';
+        },
         customClass: {
           popup: '!bg-gray-900 !text-white !rounded-2xl !shadow-2xl !border !border-gray-700 !px-6 !py-4',
           title: '!text-sm !font-medium',
@@ -1311,6 +1322,9 @@ function PlayPageClient() {
         showConfirmButton: false,
         timer: 2500,
         timerProgressBar: true,
+        didOpen: (popup) => {
+          (popup as HTMLElement).style.paddingTop = 'calc(env(safe-area-inset-top, 20px) + 12px)';
+        },
         customClass: {
           popup: '!bg-gray-900 !text-white !rounded-2xl !shadow-2xl !border !border-gray-700 !px-6 !py-4',
           title: '!text-sm !font-medium',
@@ -2164,6 +2178,9 @@ function PlayPageClient() {
                           showConfirmButton: false,
                           timer: 2500,
                           timerProgressBar: true,
+                          didOpen: (popup) => {
+                            (popup as HTMLElement).style.paddingTop = 'calc(env(safe-area-inset-top, 20px) + 12px)';
+                          },
                           customClass: {
                             popup: '!bg-gray-900 !text-white !rounded-2xl !shadow-2xl !border !border-gray-700 !px-6 !py-4',
                             title: '!text-sm !font-medium',
@@ -2179,6 +2196,9 @@ function PlayPageClient() {
                           showConfirmButton: false,
                           timer: 2500,
                           timerProgressBar: true,
+                          didOpen: (popup) => {
+                            (popup as HTMLElement).style.paddingTop = 'calc(env(safe-area-inset-top, 20px) + 12px)';
+                          },
                           customClass: {
                             popup: '!bg-gray-900 !text-white !rounded-2xl !shadow-2xl !border !border-gray-700 !px-6 !py-4',
                             title: '!text-sm !font-medium',
@@ -2309,6 +2329,7 @@ function PlayPageClient() {
                 precomputedVideoInfo={precomputedVideoInfo}
                 episodes={detail?.episodes}
                 onDownloadClick={handleDownloadEpisode}
+                showSourceTab={currentSource !== 'local'}
               />
             </div>
           </div>
