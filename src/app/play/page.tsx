@@ -520,7 +520,85 @@ function PlayPageClient() {
     return `${minutes}分${remainingSeconds.toString().padStart(2, '0')}秒`;
   };
 
-  class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
+  // 本地播放上下文，由 playLocalVideo 函数设置
+let localPlaybackCtx: { dirPath: string; writeDirEnum: Directory } | null = null;
+
+// 创建本地分段 Loader：拦截 local://segment/N URL，从磁盘读取文件
+function createLocalSegmentLoader() {
+  const ctx = localPlaybackCtx;
+  if (!ctx) throw new Error('本地播放上下文未设置');
+
+  class LocalSegmentLoader {
+    private aborted = false;
+    context: any = null;
+    stats: any = { aborted: false, loaded: 0, total: 0, retry: 0, chunkCount: 0, bwEstimate: 0,
+      loading: { start: 0, first: 0, end: 0 }, parsing: { start: 0, end: 0 }, buffering: { start: 0, first: 0, end: 0 } };
+
+    // eslint-disable-next-line @typescript-eslint/no-empty-function, @typescript-eslint/no-unused-vars
+    constructor(_config: any) {
+      this.context = null;
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-empty-function
+    destroy() {}
+    abort() {
+      this.aborted = true;
+    }
+
+    load(context: any, _config: any, callbacks: any) {
+      const url: string = context.url || '';
+
+      if (url.startsWith('local://segment/')) {
+        const segIdx = url.replace('local://segment/', '');
+        const segFileName = `seg_${String(parseInt(segIdx, 10)).padStart(5, '0')}.ts`;
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        const segPath = `${ctx!.dirPath}/${segFileName}`;
+
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        Filesystem.readFile({ path: segPath, directory: ctx!.writeDirEnum as any })
+          .then((result: any) => {
+            const base64 = result.data as string;
+            const bytes = atob(base64);
+            const arr = new Uint8Array(bytes.length);
+            for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
+            const stats = {
+              aborted: false, loaded: arr.length, total: arr.length, retry: 0, chunkCount: 1,
+              bwEstimate: 0, loading: { start: performance.now(), first: performance.now(), end: performance.now() },
+              parsing: { start: 0, end: 0 }, buffering: { start: 0, first: 0, end: 0 },
+              ...(context.stats || {}),
+            };
+            callbacks.onSuccess({ url, data: arr.buffer }, stats, context);
+          })
+          .catch((err: any) => {
+            callbacks.onError({ code: 404, text: (err as Error).message }, context, null);
+          });
+      } else {
+        // 非 local:// URL，使用 fetch 加载（blob: URL 的 M3U8 清单）
+        fetch(url, { headers: context.headers as Record<string, string> | undefined } as any)
+          .then((resp: any) => {
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            return resp.arrayBuffer();
+          })
+          .then((data: ArrayBuffer) => {
+            const stats = {
+              aborted: false, loaded: data.byteLength, total: data.byteLength, retry: 0, chunkCount: 1,
+              bwEstimate: 0, loading: { start: performance.now(), first: performance.now(), end: performance.now() },
+              parsing: { start: 0, end: 0 }, buffering: { start: 0, first: 0, end: 0 },
+              ...(context.stats || {}),
+            };
+            callbacks.onSuccess({ url, data }, stats, context);
+          })
+          .catch((err: any) => {
+            callbacks.onError({ code: 0, text: (err as Error).message }, context, null);
+          });
+      }
+    }
+  }
+
+  return LocalSegmentLoader;
+}
+
+class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
     constructor(config: any) {
       super(config);
       const load = this.load.bind(this);
@@ -693,7 +771,7 @@ function PlayPageClient() {
       if (hasInitializedRef.current) return;
       hasInitializedRef.current = true;
 
-      // 本地文件播放：拼接所有 TS 片段为单个 Blob → 直接播放（绕过 HLS.js）
+      // 本地文件播放：用 HLS.js + 自定义 Loader 从磁盘读取 TS 分段
       if (currentSource === 'local') {
         const dlTasks = getDownloadTasks();
         const dlTask = dlTasks.find(t => t.id === currentId);
@@ -705,7 +783,6 @@ function PlayPageClient() {
 
         setVideoTitle(dlTask.title || '');
         setVideoCover(dlTask.poster || '');
-        // 标记为本地播放，后续 EpisodeSelector 和 ArtPlayer 初始化会据此调整
         setIsLocalPlayback(true);
         setDetail({
           id: dlTask.id,
@@ -719,64 +796,28 @@ function PlayPageClient() {
         try {
           setLoadingMessage('正在加载本地视频...');
           const writeDirEnum = dlTask.writeDirectory === 'Library' ? Directory.Library : Directory.Data;
-
-          // 从 playlist.m3u8 路径推导出目录路径和段数
           const dirPath = dlTask.localPath.replace(/\/playlist\.m3u8$/, '');
-          const segCount = dlTask.segmentCount || 0;
 
-          if (segCount <= 0) {
-            // 旧格式：尝试读取 playlist.m3u8 并用 HLS.js 播放
-            const result = await Filesystem.readFile({ path: dlTask.localPath, directory: writeDirEnum });
-            const base64Data = result.data as string;
-            const decoded = atob(base64Data);
-            const blob = new Blob([decoded], { type: 'application/vnd.apple.mpegurl' });
-            const blobUrl = URL.createObjectURL(blob);
-            setVideoUrl(blobUrl);
-            setIsLocalPlayback(false);
-            setLoading(false);
-            return;
-          }
+          // 设置本地播放上下文（供 LocalSegmentLoader 使用）
+          localPlaybackCtx = { dirPath, writeDirEnum };
 
-          // 逐段读取 TS 文件，拼接为单个 Blob
-          const segments: Uint8Array[] = [];
-          let totalBytes = 0;
-          for (let i = 0; i < segCount; i++) {
-            const segFileName = `seg_${String(i).padStart(5, '0')}.ts`;
-            const segFilePath = `${dirPath}/${segFileName}`;
-            try {
-              const segResult = await Filesystem.readFile({ path: segFilePath, directory: writeDirEnum });
-              const segBase64 = segResult.data as string;
-              const segBinary = atob(segBase64);
-              const segBytes = new Uint8Array(segBinary.length);
-              for (let j = 0; j < segBinary.length; j++) {
-                segBytes[j] = segBinary.charCodeAt(j);
-              }
-              segments.push(segBytes);
-              totalBytes += segBytes.length;
-              setLoadingMessage(`正在加载本地视频... (${i + 1}/${segCount})`);
-            } catch (segErr) {
-              console.warn(`读取片段 ${segFileName} 失败: ${(segErr as Error).message}`);
-              // 继续尝试读取后续片段
-            }
-          }
-
-          if (segments.length === 0) {
-            throw new Error('没有找到任何视频片段，请重新下载');
-          }
-
-          setLoadingMessage('正在拼接视频...');
-          const merged = new Uint8Array(totalBytes);
-          let offset = 0;
-          for (const seg of segments) {
-            merged.set(seg, offset);
-            offset += seg.length;
+          // 读取 M3U8 播放列表
+          const result = await Filesystem.readFile({ path: dlTask.localPath, directory: writeDirEnum });
+          let playlistContent: string;
+          try {
+            playlistContent = atob(result.data as string);
+          } catch {
+            // 非 base64（旧格式兼容）
+            playlistContent = result.data as string;
           }
 
           console.log(
-            `本地视频加载诊断:\n  片段数: ${segments.length}/${segCount}\n  总大小: ${(totalBytes / 1024 / 1024).toFixed(2)} MB\n  首位字节: ${merged[0]?.toString(16) || 'N/A'}\n  末位字节: ${merged[merged.length - 1]?.toString(16) || 'N/A'}`
+            `本地播放诊断:\n  M3U8内容前200字符:\n${playlistContent.substring(0, 200)}`
           );
-          const mergedBlob = new Blob([merged], { type: 'video/mp2t' });
-          const blobUrl = URL.createObjectURL(mergedBlob);
+
+          // 创建 Blob URL 给 HLS.js
+          const blob = new Blob([playlistContent], { type: 'application/vnd.apple.mpegurl' });
+          const blobUrl = URL.createObjectURL(blob);
           setVideoUrl(blobUrl);
           setLoading(false);
         } catch (e) {
@@ -1487,10 +1528,9 @@ function PlayPageClient() {
         moreVideoAttr: {
           crossOrigin: 'anonymous',
         },
-        // HLS 支持配置（本地播放时跳过 HLS.js，由浏览器原生解码 TS）
-        ...(isLocalPlayback ? {} : {
-          customType: {
-            m3u8: function (video: HTMLVideoElement, url: string) {
+        // HLS 支持配置
+        customType: {
+          m3u8: function (video: HTMLVideoElement, url: string) {
               if (!Hls) {
                 console.error('HLS.js 未加载');
                 return;
@@ -1510,7 +1550,9 @@ function PlayPageClient() {
                 maxBufferSize: 60 * 1000 * 1000, // 约 60MB，超出后触发清理
 
                 /* 自定义loader */
-                loader: blockAdEnabledRef.current
+                loader: isLocalPlayback
+                  ? createLocalSegmentLoader()
+                  : blockAdEnabledRef.current
                   ? CustomHlsJsLoader
                   : Hls.DefaultConfig.loader,
               });
@@ -1566,7 +1608,6 @@ function PlayPageClient() {
               });
             },
           },
-        }),
         icons: {
           loading:
             '<img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1MCIgaGVpZ2h0PSI1MCIgdmlld0JveD0iMCAwIDUwIDUwIj48cGF0aCBkPSJNMjUuMjUxIDYuNDYxYy0xMC4zMTggMC0xOC42ODMgOC4zNjUtMTguNjgzIDE4LjY4M2g0LjA2OGMwLTguMDcgNi41NDUtMTQuNjE1IDE0LjYxNS0xNC42MTVWNi40NjF6IiBmaWxsPSIjMDA5Njg4Ij48YW5pbWF0ZVRyYW5zZm9ybSBhdHRyaWJ1dGVOYW1lPSJ0cmFuc2Zvcm0iIGF0dHJpYnV0ZVR5cGU9IlhNTCIgZHVyPSIxcyIgZnJvbT0iMCAyNSAyNSIgcmVwZWF0Q291bnQ9ImluZGVmaW5pdGUiIHRvPSIzNjAgMjUgMjUiIHR5cGU9InJvdGF0ZSIvPjwvcGF0aD48L3N2Zz4=">',

@@ -432,8 +432,7 @@ async function downloadHlsStream(taskId: string, playlistUrl: string, fileName: 
   // Capacitor 环境：确定写入目录，静默处理"已存在"错误
   let writeDir = Directory.Data;
   const ensureDir = async (path: string, dir: Directory) => {
-    try { await Filesystem.stat({ path, directory: dir }); return; /* 已存在，跳过 */ } catch { /* 不存在 */ }
-    try { await Filesystem.mkdir({ path, directory: dir, recursive: true }); } catch { /* mkdir 失败也继续，writeFile recursive 会兜底 */ }
+    try { await Filesystem.mkdir({ path, directory: dir, recursive: true }); } catch { /* mkdir 失败也继续 */ }
   };
   try { await ensureDir(dirPath, Directory.Data); } catch { /* fall through */ }
   try { await ensureDir(dirPath, Directory.Library); writeDir = Directory.Library; } catch { /* fall through */ }
@@ -495,17 +494,8 @@ async function downloadHlsStream(taskId: string, playlistUrl: string, fileName: 
     '#EXT-X-MEDIA-SEQUENCE:0',
   ];
   for (let i = 0; i < segCount; i++) {
-    const segFileName = `seg_${String(i).padStart(5, '0')}.ts`;
-    const segFilePath = `${dirPath}/${segFileName}`;
-    let statResult;
-    try {
-      statResult = await Filesystem.stat({ path: segFilePath, directory: writeDir });
-    } catch {
-      throw new Error(`无法获取片段 ${segFileName} 的文件信息`);
-    }
-    const capUrl = Capacitor.convertFileSrc(statResult.uri);
-    m3u8Lines.push(`#EXTINF:10.000,`);
-    m3u8Lines.push(capUrl);
+    m3u8Lines.push('#EXTINF:10.000,');
+    m3u8Lines.push(`local://segment/${i}`);
   }
   m3u8Lines.push('#EXT-X-ENDLIST');
   const playlistContent = m3u8Lines.join('\n') + '\n';
