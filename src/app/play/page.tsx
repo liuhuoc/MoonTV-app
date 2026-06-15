@@ -692,7 +692,7 @@ function PlayPageClient() {
       if (hasInitializedRef.current) return;
       hasInitializedRef.current = true;
 
-      // 本地文件播放：读合并文件 → Blob URL → HTML5 video 直接播放
+      // 本地文件播放：读 M3U8 播放列表 → Blob URL → HLS.js 播放
       if (currentSource === 'local') {
         const dlTasks = getDownloadTasks();
         const dlTask = dlTasks.find(t => t.id === currentId);
@@ -702,13 +702,6 @@ function PlayPageClient() {
           return;
         }
 
-        // 修复：兼容旧版 localPath 格式（缺少 video.ts 文件名）
-        let filePath = dlTask.localPath;
-        if (!filePath.endsWith('.ts') && !filePath.match(/\.\w+$/)) {
-          // 如果 localPath 是目录路径，追加 video.ts
-          filePath = filePath.replace(/\/$/, '') + '/video.ts';
-        }
-
         setVideoTitle(dlTask.title || '');
         setVideoCover(dlTask.poster || '');
         setDetail({
@@ -716,19 +709,16 @@ function PlayPageClient() {
           title: dlTask.title,
           source: 'local',
           source_name: '本地文件',
-          episodes: [filePath],
+          episodes: [dlTask.localPath],
           douban_id: 0,
         } as any);
 
         try {
           setLoadingMessage('正在加载本地视频...');
           const writeDirEnum = dlTask.writeDirectory === 'Library' ? Directory.Library : Directory.Data;
-          const result = await Filesystem.readFile({ path: filePath, directory: writeDirEnum });
-          const base64 = result.data as string;
-          const binaryStr = atob(base64);
-          const bytes = new Uint8Array(binaryStr.length);
-          for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
-          const blob = new Blob([bytes], { type: 'video/mp2t' });
+          const result = await Filesystem.readFile({ path: dlTask.localPath, directory: writeDirEnum });
+          const content = result.data as string;
+          const blob = new Blob([content], { type: 'application/vnd.apple.mpegurl' });
           const blobUrl = URL.createObjectURL(blob);
           setVideoUrl(blobUrl);
           setLoading(false);
@@ -1304,7 +1294,8 @@ function PlayPageClient() {
         timer: 2500,
         timerProgressBar: true,
         didOpen: (popup) => {
-          (popup as HTMLElement).style.paddingTop = 'calc(env(safe-area-inset-top, 20px) + 12px)';
+          const el = popup as HTMLElement;
+          el.style.setProperty('top', 'env(safe-area-inset-top, 44px)', 'important');
         },
         customClass: {
           popup: '!bg-gray-900 !text-white !rounded-2xl !shadow-2xl !border !border-gray-700 !px-6 !py-4',
@@ -1323,7 +1314,8 @@ function PlayPageClient() {
         timer: 2500,
         timerProgressBar: true,
         didOpen: (popup) => {
-          (popup as HTMLElement).style.paddingTop = 'calc(env(safe-area-inset-top, 20px) + 12px)';
+          const el = popup as HTMLElement;
+          el.style.setProperty('top', 'env(safe-area-inset-top, 44px)', 'important');
         },
         customClass: {
           popup: '!bg-gray-900 !text-white !rounded-2xl !shadow-2xl !border !border-gray-700 !px-6 !py-4',
@@ -2179,7 +2171,8 @@ function PlayPageClient() {
                           timer: 2500,
                           timerProgressBar: true,
                           didOpen: (popup) => {
-                            (popup as HTMLElement).style.paddingTop = 'calc(env(safe-area-inset-top, 20px) + 12px)';
+                            const el = popup as HTMLElement;
+                            el.style.setProperty('top', 'env(safe-area-inset-top, 44px)', 'important');
                           },
                           customClass: {
                             popup: '!bg-gray-900 !text-white !rounded-2xl !shadow-2xl !border !border-gray-700 !px-6 !py-4',
@@ -2197,7 +2190,8 @@ function PlayPageClient() {
                           timer: 2500,
                           timerProgressBar: true,
                           didOpen: (popup) => {
-                            (popup as HTMLElement).style.paddingTop = 'calc(env(safe-area-inset-top, 20px) + 12px)';
+                            const el = popup as HTMLElement;
+                            el.style.setProperty('top', 'env(safe-area-inset-top, 44px)', 'important');
                           },
                           customClass: {
                             popup: '!bg-gray-900 !text-white !rounded-2xl !shadow-2xl !border !border-gray-700 !px-6 !py-4',
@@ -2330,6 +2324,7 @@ function PlayPageClient() {
                 episodes={detail?.episodes}
                 onDownloadClick={handleDownloadEpisode}
                 showSourceTab={currentSource !== 'local'}
+                hideAllTabs={currentSource === 'local'}
               />
             </div>
           </div>

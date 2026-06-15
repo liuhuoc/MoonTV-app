@@ -54,6 +54,8 @@ interface EpisodeSelectorProps {
   onDownloadClick?: () => void;
   /** 是否显示换源 Tab，默认 true */
   showSourceTab?: boolean;
+  /** 是否隐藏所有 Tab（选集和换源都不显示），默认 false */
+  hideAllTabs?: boolean;
 }
 
 /**
@@ -77,6 +79,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
   episodes,
   onDownloadClick,
   showSourceTab = true,
+  hideAllTabs = false,
 }) => {
   const router = useRouter();
   const pageCount = Math.ceil(totalEpisodes / episodesPerPage);
@@ -105,14 +108,14 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
   // 主要的 tab 状态：'episodes' 或 'sources'
   // 当只有一集时默认展示 "换源"，并隐藏 "选集" 标签
   const [activeTab, setActiveTab] = useState<'episodes' | 'sources'>(
-    totalEpisodes > 1 ? 'episodes' : 'sources'
+    totalEpisodes > 1 ? 'episodes' : (hideAllTabs ? 'episodes' : 'sources')
   );
   // 如果换源 Tab 被隐藏，强制切换到 episodes
   useEffect(() => {
-    if (!showSourceTab && activeTab === 'sources') {
+    if ((!showSourceTab || hideAllTabs) && activeTab === 'sources') {
       setActiveTab('episodes');
     }
-  }, [showSourceTab, activeTab]);
+  }, [showSourceTab, hideAllTabs, activeTab]);
 
   // 当前分页索引（0 开始）
   const initialPage = Math.floor((value - 1) / episodesPerPage);
@@ -317,7 +320,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
     <div className='md:ml-2 px-4 py-0 h-full rounded-xl bg-black/10 dark:bg-white/5 flex flex-col border border-white/0 dark:border-white/30 overflow-hidden'>
       {/* 主要的 Tab 切换 - 无缝融入设计 */}
       <div className='flex mb-1 -mx-6 flex-shrink-0'>
-        {totalEpisodes > 1 && (
+        {!hideAllTabs && totalEpisodes > 1 && (
           <div
             onClick={() => setActiveTab('episodes')}
             className={`flex-1 py-3 px-6 text-center cursor-pointer transition-all duration-200 font-medium
@@ -331,7 +334,7 @@ const EpisodeSelector: React.FC<EpisodeSelectorProps> = ({
             选集
           </div>
         )}
-        {showSourceTab && (
+        {!hideAllTabs && showSourceTab && (
           <div
             onClick={handleSourceTabClick}
             className={`flex-1 py-3 px-6 text-center cursor-pointer transition-all duration-200 font-medium
