@@ -152,6 +152,7 @@ function PlayPageClient() {
 
   // 视频播放地址
   const [videoUrl, setVideoUrl] = useState('');
+  const [isLocalPlayback, setIsLocalPlayback] = useState(false);
 
   // 总集数
   const totalEpisodes = detail?.episodes?.length || 0;
@@ -692,7 +693,7 @@ function PlayPageClient() {
       if (hasInitializedRef.current) return;
       hasInitializedRef.current = true;
 
-      // 本地文件播放：读 M3U8 播放列表 → Blob URL → HLS.js 播放
+      // 本地文件播放：拼接所有 TS 片段为单个 Blob → 直接播放（绕过 HLS.js）
       if (currentSource === 'local') {
         const dlTasks = getDownloadTasks();
         const dlTask = dlTasks.find(t => t.id === currentId);
@@ -704,6 +705,8 @@ function PlayPageClient() {
 
         setVideoTitle(dlTask.title || '');
         setVideoCover(dlTask.poster || '');
+        // 标记为本地播放，后续 EpisodeSelector 和 ArtPlayer 初始化会据此调整
+        setIsLocalPlayback(true);
         setDetail({
           id: dlTask.id,
           title: dlTask.title,
@@ -716,10 +719,61 @@ function PlayPageClient() {
         try {
           setLoadingMessage('正在加载本地视频...');
           const writeDirEnum = dlTask.writeDirectory === 'Library' ? Directory.Library : Directory.Data;
-          const result = await Filesystem.readFile({ path: dlTask.localPath, directory: writeDirEnum });
-          const content = result.data as string;
-          const blob = new Blob([content], { type: 'application/vnd.apple.mpegurl' });
-          const blobUrl = URL.createObjectURL(blob);
+
+          // 从 playlist.m3u8 路径推导出目录路径和段数
+          const dirPath = dlTask.localPath.replace(/\/playlist\.m3u8$/, '');
+          const segCount = dlTask.segmentCount || 0;
+
+          if (segCount <= 0) {
+            // 旧格式：尝试读取 playlist.m3u8 并用 HLS.js 播放
+            const result = await Filesystem.readFile({ path: dlTask.localPath, directory: writeDirEnum });
+            const base64Data = result.data as string;
+            const decoded = atob(base64Data);
+            const blob = new Blob([decoded], { type: 'application/vnd.apple.mpegurl' });
+            const blobUrl = URL.createObjectURL(blob);
+            setVideoUrl(blobUrl);
+            setIsLocalPlayback(false);
+            setLoading(false);
+            return;
+          }
+
+          // 逐段读取 TS 文件，拼接为单个 Blob
+          const segments: Uint8Array[] = [];
+          let totalBytes = 0;
+          for (let i = 0; i < segCount; i++) {
+            const segFileName = `seg_${String(i).padStart(5, '0')}.ts`;
+            const segFilePath = `${dirPath}/${segFileName}`;
+            try {
+              const segResult = await Filesystem.readFile({ path: segFilePath, directory: writeDirEnum });
+              const segBase64 = segResult.data as string;
+              const segBinary = atob(segBase64);
+              const segBytes = new Uint8Array(segBinary.length);
+              for (let j = 0; j < segBinary.length; j++) {
+                segBytes[j] = segBinary.charCodeAt(j);
+              }
+              segments.push(segBytes);
+              totalBytes += segBytes.length;
+              setLoadingMessage(`正在加载本地视频... (${i + 1}/${segCount})`);
+            } catch (segErr) {
+              console.warn(`读取片段 ${segFileName} 失败:`, segErr);
+              // 继续尝试读取后续片段
+            }
+          }
+
+          if (segments.length === 0) {
+            throw new Error('没有找到任何视频片段，请重新下载');
+          }
+
+          setLoadingMessage('正在拼接视频...');
+          const merged = new Uint8Array(totalBytes);
+          let offset = 0;
+          for (const seg of segments) {
+            merged.set(seg, offset);
+            offset += seg.length;
+          }
+
+          const mergedBlob = new Blob([merged], { type: 'video/mp2t' });
+          const blobUrl = URL.createObjectURL(mergedBlob);
           setVideoUrl(blobUrl);
           setLoading(false);
         } catch (e) {
@@ -1334,7 +1388,7 @@ function PlayPageClient() {
   useEffect(() => {
     if (
       !Artplayer ||
-      !Hls ||
+      (!isLocalPlayback && !Hls) ||
       !videoUrl ||
       loading ||
       currentEpisodeIndex === null ||
@@ -1430,72 +1484,74 @@ function PlayPageClient() {
         moreVideoAttr: {
           crossOrigin: 'anonymous',
         },
-        // HLS 支持配置
-        customType: {
-          m3u8: function (video: HTMLVideoElement, url: string) {
-            if (!Hls) {
-              console.error('HLS.js 未加载');
-              return;
-            }
-
-            if (video.hls) {
-              video.hls.destroy();
-            }
-            const hls = new Hls({
-              debug: false, // 关闭日志
-              enableWorker: true, // WebWorker 解码，降低主线程压力
-              lowLatencyMode: true, // 开启低延迟 LL-HLS
-
-              /* 缓冲/内存相关 */
-              maxBufferLength: 30, // 前向缓冲最大 30s，过大容易导致高延迟
-              backBufferLength: 30, // 仅保留 30s 已播放内容，避免内存占用
-              maxBufferSize: 60 * 1000 * 1000, // 约 60MB，超出后触发清理
-
-              /* 自定义loader */
-              loader: blockAdEnabledRef.current
-                ? CustomHlsJsLoader
-                : Hls.DefaultConfig.loader,
-            });
-
-            hls.loadSource(url);
-            hls.attachMedia(video);
-            video.hls = hls;
-
-            ensureVideoSource(video, url);
-
-            hls.on(Hls.Events.ERROR, function (event: any, data: any) {
-              // bufferFullError 是非致命错误，不需要处理
-              if (data.details === 'bufferFullError') {
+        // HLS 支持配置（本地播放时跳过 HLS.js，由浏览器原生解码 TS）
+        ...(isLocalPlayback ? {} : {
+          customType: {
+            m3u8: function (video: HTMLVideoElement, url: string) {
+              if (!Hls) {
+                console.error('HLS.js 未加载');
                 return;
               }
-              console.error('HLS Error:', data.type, data.details);
-              if (data.fatal) {
-                switch (data.type) {
-                  case Hls.ErrorTypes.NETWORK_ERROR:
-                    console.log('网络错误，尝试恢复...');
-                    hls.startLoad();
-                    break;
-                  case Hls.ErrorTypes.MEDIA_ERROR:
-                    console.log('媒体错误，尝试恢复...');
-                    hls.recoverMediaError();
-                    setTimeout(() => {
-                      if (video && !video.paused) {
-                        video.pause();
-                        setTimeout(() => {
-                          video.play().catch(() => { /* ignore */ });
-                        }, 100);
-                      }
-                    }, 500);
-                    break;
-                  default:
-                    console.log('无法恢复的错误');
-                    hls.destroy();
-                    break;
-                }
+
+              if (video.hls) {
+                video.hls.destroy();
               }
-            });
+              const hls = new Hls({
+                debug: false, // 关闭日志
+                enableWorker: true, // WebWorker 解码，降低主线程压力
+                lowLatencyMode: true, // 开启低延迟 LL-HLS
+
+                /* 缓冲/内存相关 */
+                maxBufferLength: 30, // 前向缓冲最大 30s，过大容易导致高延迟
+                backBufferLength: 30, // 仅保留 30s 已播放内容，避免内存占用
+                maxBufferSize: 60 * 1000 * 1000, // 约 60MB，超出后触发清理
+
+                /* 自定义loader */
+                loader: blockAdEnabledRef.current
+                  ? CustomHlsJsLoader
+                  : Hls.DefaultConfig.loader,
+              });
+
+              hls.loadSource(url);
+              hls.attachMedia(video);
+              video.hls = hls;
+
+              ensureVideoSource(video, url);
+
+              hls.on(Hls.Events.ERROR, function (event: any, data: any) {
+                // bufferFullError 是非致命错误，不需要处理
+                if (data.details === 'bufferFullError') {
+                  return;
+                }
+                console.error('HLS Error:', data.type, data.details);
+                if (data.fatal) {
+                  switch (data.type) {
+                    case Hls.ErrorTypes.NETWORK_ERROR:
+                      console.log('网络错误，尝试恢复...');
+                      hls.startLoad();
+                      break;
+                    case Hls.ErrorTypes.MEDIA_ERROR:
+                      console.log('媒体错误，尝试恢复...');
+                      hls.recoverMediaError();
+                      setTimeout(() => {
+                        if (video && !video.paused) {
+                          video.pause();
+                          setTimeout(() => {
+                            video.play().catch(() => { /* ignore */ });
+                          }, 100);
+                        }
+                      }, 500);
+                      break;
+                    default:
+                      console.log('无法恢复的错误');
+                      hls.destroy();
+                      break;
+                  }
+                }
+              });
+            },
           },
-        },
+        }),
         icons: {
           loading:
             '<img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1MCIgaGVpZ2h0PSI1MCIgdmlld0JveD0iMCAwIDUwIDUwIj48cGF0aCBkPSJNMjUuMjUxIDYuNDYxYy0xMC4zMTggMC0xOC42ODMgOC4zNjUtMTguNjgzIDE4LjY4M2g0LjA2OGMwLTguMDcgNi41NDUtMTQuNjE1IDE0LjYxNS0xNC42MTVWNi40NjF6IiBmaWxsPSIjMDA5Njg4Ij48YW5pbWF0ZVRyYW5zZm9ybSBhdHRyaWJ1dGVOYW1lPSJ0cmFuc2Zvcm0iIGF0dHJpYnV0ZVR5cGU9IlhNTCIgZHVyPSIxcyIgZnJvbT0iMCAyNSAyNSIgcmVwZWF0Q291bnQ9ImluZGVmaW5pdGUiIHRvPSIzNjAgMjUgMjUiIHR5cGU9InJvdGF0ZSIvPjwvcGF0aD48L3N2Zz4=">',
@@ -1968,7 +2024,7 @@ function PlayPageClient() {
       console.error('创建播放器失败:', err);
       setError('播放器初始化失败');
     }
-  }, [Artplayer, Hls, videoUrl, loading, blockAdEnabled]);
+  }, [Artplayer, Hls, videoUrl, loading, blockAdEnabled, isLocalPlayback]);
 
   // 当组件卸载时清理定时器
   useEffect(() => {
@@ -2301,10 +2357,12 @@ function PlayPageClient() {
               </div>
             </div>
 
-            {/* 选集和换源 - 在移动端始终显示，在 lg 及以上可折叠 */}
+            {/* 选集和换源 - 本地播放时完全隐藏 */}
             <div
               className={`h-[300px] lg:h-full md:overflow-hidden transition-all duration-300 ease-in-out ${
-                isEpisodeSelectorCollapsed
+                isLocalPlayback
+                  ? 'hidden'
+                  : isEpisodeSelectorCollapsed
                   ? 'md:col-span-1 lg:hidden lg:opacity-0 lg:scale-95'
                   : 'md:col-span-1 lg:opacity-100 lg:scale-100'
               }`}

@@ -510,11 +510,13 @@ async function downloadHlsStream(taskId: string, playlistUrl: string, fileName: 
   m3u8Lines.push('#EXT-X-ENDLIST');
   const playlistContent = m3u8Lines.join('\n') + '\n';
 
+  const playlistData = new TextEncoder().encode(playlistContent);
+  const playlistBase64 = arrayBufferToBase64(playlistData.buffer as ArrayBuffer);
+
   const playlistPath = `${dirPath}/playlist.m3u8`;
-  const m3u8Base64 = btoa(unescape(encodeURIComponent(playlistContent)));
   await Filesystem.writeFile({
     path: playlistPath,
-    data: m3u8Base64,
+    data: playlistBase64,
     directory: writeDir,
     recursive: true,
   });
@@ -544,27 +546,21 @@ async function downloadSegment(
     const response: HttpResponse = await CapacitorHttp.request({
       url,
       method: 'GET',
-      responseType: 'blob',
-      connectTimeout: 30000,
-      readTimeout: 60000,
+      responseType: 'arraybuffer',
+      connectTimeout: 60000,
+      readTimeout: 120000,
     });
     if (response.status < 200 || response.status >= 300 || !response.data) {
       throw new Error(`HTTP ${response.status}`);
     }
-    // CapacitorHttp returns base64 for blob responseType
+    // responseType: 'arraybuffer' 返回 base64 编码的 ArrayBuffer
     const base64 = response.data as string;
-    const byteChars = atob(base64);
-    const byteArrays: Uint8Array[] = [];
-    const sliceLen = 1024;
-    for (let offset = 0; offset < byteChars.length; offset += sliceLen) {
-      const slice = byteChars.slice(offset, offset + sliceLen);
-      const byteNumbers = new Array(slice.length);
-      for (let i = 0; i < slice.length; i++) {
-        byteNumbers[i] = slice.charCodeAt(i);
-      }
-      byteArrays.push(new Uint8Array(byteNumbers));
+    const binaryStr = atob(base64);
+    const bytes = new Uint8Array(binaryStr.length);
+    for (let i = 0; i < binaryStr.length; i++) {
+      bytes[i] = binaryStr.charCodeAt(i);
     }
-    return new Blob(byteArrays, { type: 'video/mp2t' });
+    return new Blob([bytes], { type: 'video/mp2t' });
   } else {
     const response = await fetch(url, { signal });
     if (!response.ok) {
