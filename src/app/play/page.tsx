@@ -1605,23 +1605,23 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
                   }));
                 }
                 console.log(`[HLS] video.readyState=${video.readyState}, video.paused=${video.paused}`);
-                // 手动触发加载和播放
-                try {
-                  hls.startLoad(0);
-                  console.log('[HLS] startLoad(0) 调用成功');
-                } catch (e) {
-                  console.error(`[HLS] startLoad 失败: ${(e as Error).message}`);
+
+                // 先尝试 play() 触发 HLS.js 自动加载（autoStartLoad 默认 true）
+                const playPromise = video.play();
+                if (playPromise !== undefined) {
+                  playPromise.then(() => {
+                    console.log('[HLS] video.play() 成功');
+                  }).catch((e: any) => {
+                    console.warn(`[HLS] video.play() 被拒绝: ${e?.message || e}, 手动 startLoad`);
+                    // play 被浏览器拦截时，手动触发加载
+                    try { hls.startLoad(); } catch (_) {}
+                  });
                 }
-                setTimeout(() => {
-                  console.log(`[HLS] 延迟检查: video.readyState=${video.readyState}, video.paused=${video.paused}`);
-                  if (video.paused) {
-                    video.play().then(() => {
-                      console.log('[HLS] video.play() 成功');
-                    }).catch((e: any) => {
-                      console.error(`[HLS] video.play() 失败: ${e.message}`);
-                    });
-                  }
-                }, 500);
+              });
+
+              // 监听 MEDIA_ATTACHED 确认 video 绑定成功
+              hls.on(Hls.Events.MEDIA_ATTACHED, () => {
+                console.log('[HLS] MEDIA_ATTACHED');
               });
 
               // 监听分段加载事件
