@@ -525,9 +525,6 @@ let localPlaybackCtx: { dirPath: string; writeDirEnum: Directory } | null = null
 
 // 创建本地分段 Loader：拦截 local://segment/N URL，从磁盘读取文件
 function createLocalSegmentLoader() {
-  const ctx = localPlaybackCtx;
-  if (!ctx) throw new Error('本地播放上下文未设置');
-
   class LocalSegmentLoader {
     private aborted = false;
     context: any = null;
@@ -550,15 +547,21 @@ function createLocalSegmentLoader() {
       console.log(`[LocalLoader] load() url=${url}`);
 
       if (url.startsWith('local://segment/')) {
+        // 延迟检查上下文（在 load() 调用时读取，避免闭包时序问题）
+        const ctx = localPlaybackCtx;
+        if (!ctx) {
+          console.error('[LocalLoader] localPlaybackCtx 未设置');
+          callbacks.onError({ code: 500, text: '本地播放上下文未设置' }, context, null);
+          return;
+        }
+
         const segIdx = url.replace('local://segment/', '');
         const segNum = parseInt(segIdx, 10);
         const segFileName = `seg_${String(segNum).padStart(5, '0')}.ts`;
-        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-        const segPath = `${ctx!.dirPath}/${segFileName}`;
+        const segPath = `${ctx.dirPath}/${segFileName}`;
         console.log(`[LocalLoader] 读片段: ${segFileName} (path=${segPath})`);
 
-        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-        Filesystem.readFile({ path: segPath, directory: ctx!.writeDirEnum as any })
+        Filesystem.readFile({ path: segPath, directory: ctx.writeDirEnum as any })
           .then((result: any) => {
             const base64 = result.data as string;
             const bytes = atob(base64);
@@ -578,7 +581,7 @@ function createLocalSegmentLoader() {
             callbacks.onError({ code: 404, text: (err as Error).message || '读取失败' }, context, null);
           });
       } else {
-        // 非 local:// URL，使用 fetch 加载（blob: URL 的 M3U8 清单）
+        // 非 local:// URL，使用 fetch 加载（data: URI 的 M3U8 清单）
         console.log(`[LocalLoader] fetch: ${url.substring(0, 80)}...`);
         fetch(url, { headers: context.headers as Record<string, string> | undefined } as any)
           .then((resp: any) => {
