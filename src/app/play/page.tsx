@@ -1604,14 +1604,14 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
                     fragments: levels[0].details?.fragments?.length || 0,
                   }));
                 }
-                console.log(`[HLS] video.readyState=${video.readyState}, video.paused=${video.paused}`);
+              });
 
-                // 无条件启动加载（Android WebView 中 play() 可能返回 undefined）
+              // MEDIA_ATTACHED 在 MANIFEST_PARSED 之后才触发，此时才能 startLoad
+              hls.on(Hls.Events.MEDIA_ATTACHED, () => {
+                console.log('[HLS] MEDIA_ATTACHED');
                 console.log('[HLS] 调用 startLoad...');
                 hls.startLoad();
                 console.log('[HLS] startLoad 完成');
-
-                // 同时尝试播放
                 try {
                   const playResult = video.play();
                   console.log(`[HLS] video.play() 返回: ${typeof playResult}`);
@@ -1621,11 +1621,6 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
                 } catch (e: any) {
                   console.warn(`[HLS] video.play() 同步异常: ${e?.message || e}`);
                 }
-              });
-
-              // 监听 MEDIA_ATTACHED 确认 video 绑定成功
-              hls.on(Hls.Events.MEDIA_ATTACHED, () => {
-                console.log('[HLS] MEDIA_ATTACHED');
               });
 
               // 监听分段加载事件
