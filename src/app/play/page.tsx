@@ -1606,11 +1606,12 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
               });
 
               try {
+                console.log('[customType] 绑定video...');
+                hls.attachMedia(video);
+                console.log('[customType] attachMedia 完成');
                 console.log('[customType] 调用 loadSource...');
                 hls.loadSource(url);
                 console.log('[customType] loadSource 成功');
-                hls.attachMedia(video);
-                console.log('[customType] attachMedia 完成');
               } catch (e) {
                 console.error(`[customType] loadSource/attachMedia 失败: ${(e as Error).message}`);
                 return;
