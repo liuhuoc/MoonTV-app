@@ -1593,16 +1593,49 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
                 return;
               }
 
-              hls.on(Hls.Events.MANIFEST_PARSED, () => {
-                console.log(`[HLS] MANIFEST_PARSED: 成功解析播放列表`);
+              hls.on(Hls.Events.MANIFEST_PARSED, (_event: any, data: any) => {
+                const levels = data.levels || [];
+                console.log(`[HLS] MANIFEST_PARSED: 成功解析播放列表, ${levels.length} 个level`);
+                if (levels.length > 0) {
+                  console.log(`[HLS] level[0] details:`, JSON.stringify({
+                    bitrate: levels[0].bitrate,
+                    width: levels[0].width,
+                    height: levels[0].height,
+                    fragments: levels[0].details?.fragments?.length || 0,
+                  }));
+                }
+                console.log(`[HLS] hls.state=${hls.state}, video.readyState=${video.readyState}, video.paused=${video.paused}`);
+                // 手动触发加载和播放
+                try {
+                  hls.startLoad(0);
+                  console.log('[HLS] startLoad(0) 调用成功');
+                } catch (e) {
+                  console.error(`[HLS] startLoad 失败: ${(e as Error).message}`);
+                }
+                setTimeout(() => {
+                  console.log(`[HLS] 延迟检查: hls.state=${hls.state}, video.readyState=${video.readyState}, video.paused=${video.paused}`);
+                  if (video.paused) {
+                    video.play().then(() => {
+                      console.log('[HLS] video.play() 成功');
+                    }).catch((e: any) => {
+                      console.error(`[HLS] video.play() 失败: ${e.message}`);
+                    });
+                  }
+                }, 500);
               });
 
               // 监听分段加载事件
               hls.on(Hls.Events.FRAG_LOADING, (_event: any, data: any) => {
-                console.log(`[HLS] FRAG_LOADING: ${data.frag?.url || 'N/A'}`);
+                console.log(`[HLS] FRAG_LOADING: ${data.frag?.url || 'N/A'}, sn=${data.frag?.sn}, level=${data.frag?.level}`);
               });
               hls.on(Hls.Events.FRAG_LOADED, (_event: any, data: any) => {
-                console.log(`[HLS] FRAG_LOADED: ${data.frag?.url || 'N/A'}`);
+                console.log(`[HLS] FRAG_LOADED: ${data.frag?.url || 'N/A'}, stats.loaded=${data.frag?.stats?.loaded}`);
+              });
+              hls.on(Hls.Events.FRAG_APPEND_ERROR, (_event: any, data: any) => {
+                console.error(`[HLS] FRAG_APPEND_ERROR: ${data?.details}, url=${data.frag?.url}`);
+              });
+              hls.on(Hls.Events.BUFFER_APPENDING, (_event: any, data: any) => {
+                console.log(`[HLS] BUFFER_APPENDING: type=${data.type}`);
               });
 
               try {
@@ -1618,7 +1651,10 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
               }
               video.hls = hls;
 
-              ensureVideoSource(video, url);
+              // 本地播放时不要添加 <source> 元素，避免干扰 HLS.js 的 MediaSource
+              if (!isLocalPlayback) {
+                ensureVideoSource(video, url);
+              }
 
               hls.on(Hls.Events.ERROR, function (event: any, data: any) {
                 // bufferFullError 是非致命错误，不需要处理
