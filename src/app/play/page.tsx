@@ -580,8 +580,20 @@ function createLocalSegmentLoader() {
             console.error(`[LocalLoader] 片段 ${segNum} 读取失败: ${(err as Error).message || JSON.stringify(err)}`);
             callbacks.onError({ code: 404, text: (err as Error).message || '读取失败' }, context, null);
           });
+      } else if (url.startsWith('data:')) {
+        // data: URI（Android WebView 中用 data: 替代 blob URL）直接解码
+        const base64Content = url.replace(/^data:[^;]*;base64,/, '');
+        const text = atob(base64Content);
+        console.log(`[LocalLoader] data: URI 解码成功: ${text.length} chars`);
+        const stats = {
+          aborted: false, loaded: text.length, total: text.length, retry: 0, chunkCount: 1,
+          bwEstimate: 0, loading: { start: performance.now(), first: performance.now(), end: performance.now() },
+          parsing: { start: 0, end: 0 }, buffering: { start: 0, first: 0, end: 0 },
+          ...(context.stats || {}),
+        };
+        callbacks.onSuccess({ url, data: text }, stats, context, null);
       } else {
-        // 非 local:// URL，使用 fetch 加载（data: URI 的 M3U8 清单）
+        // 非 local:// 且非 data: 的 URL，使用 fetch 加载
         console.log(`[LocalLoader] fetch: ${url.substring(0, 80)}...`);
         fetch(url, { headers: context.headers as Record<string, string> | undefined } as any)
           .then((resp: any) => {
