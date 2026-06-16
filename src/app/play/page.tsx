@@ -1574,6 +1574,7 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
                   debug: false, // 关闭日志
                   enableWorker: true, // WebWorker 解码，降低主线程压力
                   lowLatencyMode: true, // 开启低延迟 LL-HLS
+                  autoStartLoad: false, // 关掉自动启动，等到 MEDIA_ATTACHED 后手动 startLoad
 
                   /* 缓冲/内存相关 */
                   maxBufferLength: 30, // 前向缓冲最大 30s，过大容易导致高延迟
