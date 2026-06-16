@@ -1606,16 +1606,20 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
                 }
                 console.log(`[HLS] video.readyState=${video.readyState}, video.paused=${video.paused}`);
 
-                // 先尝试 play() 触发 HLS.js 自动加载（autoStartLoad 默认 true）
-                const playPromise = video.play();
-                if (playPromise !== undefined) {
-                  playPromise.then(() => {
-                    console.log('[HLS] video.play() 成功');
-                  }).catch((e: any) => {
-                    console.warn(`[HLS] video.play() 被拒绝: ${e?.message || e}, 手动 startLoad`);
-                    // play 被浏览器拦截时，手动触发加载
-                    try { hls.startLoad(); } catch (_) {}
-                  });
+                // 无条件启动加载（Android WebView 中 play() 可能返回 undefined）
+                console.log('[HLS] 调用 startLoad...');
+                hls.startLoad();
+                console.log('[HLS] startLoad 完成');
+
+                // 同时尝试播放
+                try {
+                  const playResult = video.play();
+                  console.log(`[HLS] video.play() 返回: ${typeof playResult}`);
+                  if (playResult && typeof playResult.then === 'function') {
+                    playResult.then(() => console.log('[HLS] video.play() resolve')).catch((e: any) => console.warn(`[HLS] video.play() reject: ${e?.message || e}`));
+                  }
+                } catch (e: any) {
+                  console.warn(`[HLS] video.play() 同步异常: ${e?.message || e}`);
                 }
               });
 
