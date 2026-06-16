@@ -56,9 +56,7 @@ function DownloadDetailClient() {
 
   const handlePlayEpisode = (task: DownloadTask) => {
     if (task.status !== 'completed') return;
-    if (task.localFileUri) {
-      router.push(`/play?source=local&id=${task.id}&title=${encodeURIComponent(task.title)}&episode=${encodeURIComponent(task.episodeLabel)}`);
-    }
+    router.push(`/play?source=local&id=${task.id}&title=${encodeURIComponent(task.title)}&episode=${encodeURIComponent(task.episodeLabel)}`);
   };
 
   const completedCount = tasks.filter(t => t.status === 'completed').length;

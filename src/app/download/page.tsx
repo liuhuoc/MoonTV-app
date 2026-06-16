@@ -144,14 +144,12 @@ function DownloadPageClient() {
                     {/* 快速操作 */}
                     <div className='flex items-center gap-1 flex-shrink-0' onClick={(e) => e.stopPropagation()}>
                       {/* 如果全部完成且是电影，点击播放 */}
-                      {isMovie && group[0].status === 'completed' && (
+                      {isMovie && group[0].status === 'completed' && (group[0].localFileUri || group[0].localPath) && (
                         <button
                           onClick={() => {
                             // 尝试用本地路径播放
                             const task = group[0];
-                            if (task.localFileUri) {
-                              router.push(`/play?source=local&id=${task.id}&title=${encodeURIComponent(task.title)}`);
-                            }
+                            router.push(`/play?source=local&id=${task.id}&title=${encodeURIComponent(task.title)}`);
                           }}
                           className='p-2 rounded-full hover:bg-green-500/10 text-green-500 transition-colors'
                           title='播放'

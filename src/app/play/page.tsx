@@ -7,6 +7,10 @@ import { StatusBar } from '@capacitor/status-bar';
 import { Directory, Filesystem } from '@capacitor/filesystem';
 import Artplayer from 'artplayer';
 import Hls from 'hls.js';
+import {
+  browserReadSegment,
+  browserReadPlaylist,
+} from '@/lib/storage';
 import { Heart, Download } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
@@ -521,7 +525,10 @@ function PlayPageClient() {
   };
 
   // 本地播放上下文，由 playLocalVideo 函数设置
-let localPlaybackCtx: { dirPath: string; writeDirEnum: Directory } | null = null;
+type LocalPlaybackCtx =
+  | { platform: 'capacitor'; dirPath: string; writeDirEnum: Directory }
+  | { platform: 'browser'; taskId: string };
+let localPlaybackCtx: LocalPlaybackCtx | null = null;
 
 // 创建本地分段 Loader：拦截 local://segment/N URL，从磁盘读取文件
 function createLocalSegmentLoader() {
@@ -557,6 +564,30 @@ function createLocalSegmentLoader() {
 
         const segIdx = url.replace('local://segment/', '');
         const segNum = parseInt(segIdx, 10);
+
+        // 浏览器端：从 IndexedDB 读取
+        if (ctx.platform === 'browser') {
+          const segIndex = segNum + 1; // IndexedDB key 是 1-based
+          console.log(`[LocalLoader] 读浏览器片段: ${segNum} (key=${segIndex})`);
+          browserReadSegment(ctx.taskId, segIndex)
+            .then((buf: ArrayBuffer) => {
+              console.log(`[LocalLoader] 片段 ${segNum} 读取成功: ${buf.byteLength} bytes`);
+              const stats = {
+                aborted: false, loaded: buf.byteLength, total: buf.byteLength, retry: 0, chunkCount: 1,
+                bwEstimate: 0, loading: { start: performance.now(), first: performance.now(), end: performance.now() },
+                parsing: { start: 0, end: 0 }, buffering: { start: 0, first: 0, end: 0 },
+                ...(context.stats || {}),
+              };
+              callbacks.onSuccess({ url, data: buf }, stats, context, null);
+            })
+            .catch((err: any) => {
+              console.error(`[LocalLoader] 浏览器片段 ${segNum} 读取失败: ${(err as Error).message || JSON.stringify(err)}`);
+              callbacks.onError({ code: 404, text: (err as Error).message || '读取失败' }, context, null);
+            });
+          return;
+        }
+
+        // Capacitor 端：从 Filesystem 读取
         const segFileName = `seg_${String(segNum).padStart(5, '0')}.ts`;
         const segPath = `${ctx.dirPath}/${segFileName}`;
         console.log(`[LocalLoader] 读片段: ${segFileName} (path=${segPath})`);
@@ -799,7 +830,7 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
       if (currentSource === 'local') {
         const dlTasks = getDownloadTasks();
         const dlTask = dlTasks.find(t => t.id === currentId);
-        if (!dlTask?.localPath || !dlTask.writeDirectory) {
+        if (!dlTask?.localPath) {
           setError('已下载文件信息不完整，请重新下载');
           setLoading(false);
           return;
@@ -819,11 +850,31 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
 
         try {
           setLoadingMessage('正在加载本地视频...');
+
+          // 浏览器端：从 IndexedDB 读取
+          if (dlTask.writeDirectory === 'IndexedDB') {
+            localPlaybackCtx = { platform: 'browser', taskId: currentId || dlTask.id };
+            const playlistContent = await browserReadPlaylist(currentId || dlTask.id);
+            console.log(
+              `本地播放诊断:\n  M3U8内容前200字符:\n${playlistContent.substring(0, 200)}`
+            );
+            // 浏览器端可以直接用 data: URI，不会像 Android WebView 那样有问题
+            const dataUri = 'data:application/vnd.apple.mpegurl;base64,' + btoa(playlistContent);
+            console.log(`[本地播放] data URI 长度: ${dataUri.length}`);
+            setVideoUrl(dataUri);
+            setLoading(false);
+            return;
+          }
+
+          // Capacitor 端：从 Filesystem 读取
+          if (!dlTask.writeDirectory) {
+            setError('已下载文件信息不完整，请重新下载');
+            setLoading(false);
+            return;
+          }
           const writeDirEnum = dlTask.writeDirectory === 'Library' ? Directory.Library : Directory.Data;
           const dirPath = dlTask.localPath.replace(/\/playlist\.m3u8$/, '');
-
-          // 设置本地播放上下文（供 LocalSegmentLoader 使用）
-          localPlaybackCtx = { dirPath, writeDirEnum };
+          localPlaybackCtx = { platform: 'capacitor', dirPath, writeDirEnum };
 
           // 读取 M3U8 播放列表
           const result = await Filesystem.readFile({ path: dlTask.localPath, directory: writeDirEnum });

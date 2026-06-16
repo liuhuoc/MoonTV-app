@@ -3,6 +3,7 @@
 import { CapacitorHttp, type HttpResponse, Capacitor } from '@capacitor/core';
 import { Directory, Filesystem } from '@capacitor/filesystem';
 import { getDownloadSettings } from './settings';
+import { browserSaveSegment, browserSavePlaylist, browserDeleteTask } from './storage';
 
 const activeAbortControllers = new Map<string, AbortController>();
 
@@ -124,51 +125,14 @@ export async function deleteDownloadTask(id: string): Promise<void> {
   const filtered = tasks.filter(t => t.id !== id);
   saveTasks(filtered);
 
-  // 浏览器环境：清理 IndexedDB 中的片段
+  // 浏览器环境：清理 IndexedDB 中的片段和播放列表
   if (!isCapacitor()) {
     try {
-      await deleteSegmentsFromIndexedDB(id);
+      await browserDeleteTask(id);
     } catch {
       // 忽略
     }
   }
-}
-
-/** 清理该任务在 IndexedDB 中的片段数据 */
-async function deleteSegmentsFromIndexedDB(taskId: string): Promise<void> {
-  return new Promise((resolve) => {
-    const request = indexedDB.open('MoonTVDownloads', 1);
-    request.onsuccess = () => {
-      const db = request.result;
-      if (!db.objectStoreNames.contains('segments')) {
-        db.close();
-        resolve();
-        return;
-      }
-      const tx = db.transaction('segments', 'readwrite');
-      const store = tx.objectStore('segments');
-      // 删除所有匹配前缀的 key
-      const cursorReq = store.openCursor();
-      cursorReq.onsuccess = (e) => {
-        const cursor = (e.target as IDBRequest<IDBCursorWithValue>).result;
-        if (cursor) {
-          if (typeof cursor.key === 'string' && cursor.key.startsWith(taskId)) {
-            cursor.delete();
-          }
-          cursor.continue();
-        }
-      };
-      tx.oncomplete = () => {
-        db.close();
-        resolve();
-      };
-      tx.onerror = () => {
-        db.close();
-        resolve();
-      };
-    };
-    request.onerror = () => resolve();
-  });
 }
 
 export function pauseDownload(taskId: string): void {
@@ -407,7 +371,7 @@ async function downloadHlsStream(taskId: string, playlistUrl: string, fileName: 
   const safeLabel = (task?.episodeLabel || 'episode').replace(/[/\\:*?"<>|]/g, '_').slice(0, 20);
   const dirPath = `Download/${safeTitle}/${safeLabel}`;
 
-  // 浏览器环境：下载所有片段到 IndexedDB
+  // 浏览器环境：下载所有片段到 IndexedDB，保留用于本地播放
   if (!isCapacitor()) {
     for (let i = 0; i < segments.length; i++) {
       if (signal?.aborted) throw new Error('下载已取消');
@@ -420,12 +384,37 @@ async function downloadHlsStream(taskId: string, playlistUrl: string, fileName: 
         catch (err) { lastErr = err as Error; if (attempt < 3 && !signal?.aborted) await new Promise(r => setTimeout(r, 1000 * attempt)); }
       }
       if (!blob) throw new Error(`下载第 ${segIndex} 个片段失败(重试3次): ${lastErr?.message || '未知错误'}`);
-      await saveSegmentToIndexedDB(taskId, segIndex, blob);
+      await browserSaveSegment(taskId, segIndex, blob);
       totalDownloaded += blob.size;
       updateDownloadTask(taskId, { progress: Math.round(((i + 1) / segments.length) * 100), downloadedBytes: totalDownloaded, totalBytes: totalDownloaded, speed: `${segIndex}/${segments.length} 片段` });
     }
-    updateDownloadTask(taskId, { speed: '正在合并片段...' });
-    await mergeAndSaveBrowser(taskId, segments.length, fileName);
+
+    // 生成 M3U8 播放列表并保存到 IndexedDB
+    updateDownloadTask(taskId, { speed: '正在保存播放列表...' });
+    const m3u8Lines: string[] = [
+      '#EXTM3U',
+      '#EXT-X-VERSION:3',
+      '#EXT-X-TARGETDURATION:10',
+      '#EXT-X-MEDIA-SEQUENCE:0',
+    ];
+    for (let i = 0; i < segments.length; i++) {
+      m3u8Lines.push('#EXTINF:10.000,');
+      m3u8Lines.push(`local://segment/${i}`);
+    }
+    m3u8Lines.push('#EXT-X-ENDLIST');
+    const playlistContent = m3u8Lines.join('\n') + '\n';
+    await browserSavePlaylist(taskId, playlistContent);
+
+    updateDownloadTask(taskId, {
+      status: 'completed',
+      progress: 100,
+      speed: '已完成',
+      downloadedBytes: totalDownloaded,
+      totalBytes: totalDownloaded,
+      localPath: taskId, // 浏览器端：localPath = taskId，用于 IndexedDB 查找
+      writeDirectory: 'IndexedDB',
+      segmentCount: segments.length,
+    });
     return;
   }
 
@@ -608,90 +597,6 @@ async function saveBlobToCapacitor(taskId: string, blob: Blob, fileName: string)
     speed: '完成',
     localPath: result.uri,
     localFileUri: uri,
-  });
-}
-
-/** 将单个 ts 片段保存到 IndexedDB */
-async function saveSegmentToIndexedDB(taskId: string, index: number, blob: Blob): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open('MoonTVDownloads', 1);
-    request.onupgradeneeded = () => {
-      const db = request.result;
-      if (!db.objectStoreNames.contains('segments')) {
-        db.createObjectStore('segments');
-      }
-    };
-    request.onsuccess = () => {
-      const db = request.result;
-      const tx = db.transaction('segments', 'readwrite');
-      const store = tx.objectStore('segments');
-      store.put(blob, `${taskId}_seg${String(index).padStart(5, '0')}`);
-      tx.oncomplete = () => { db.close(); resolve(); };
-      tx.onerror = () => { db.close(); reject(tx.error); };
-    };
-    request.onerror = () => reject(request.error);
-  });
-}
-
-/** 浏览器环境：从 IndexedDB 取出所有片段合并并保存 */
-async function mergeAndSaveBrowser(taskId: string, totalSegments: number, fileName: string): Promise<void> {
-  const blobs: Blob[] = [];
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open('MoonTVDownloads', 1);
-    request.onupgradeneeded = () => {
-      const db = request.result;
-      if (!db.objectStoreNames.contains('segments')) {
-        db.createObjectStore('segments');
-      }
-    };
-    request.onsuccess = async () => {
-      const db = request.result;
-      if (!db.objectStoreNames.contains('segments')) {
-        db.close();
-        reject(new Error('片段存储不存在'));
-        return;
-      }
-      const tx = db.transaction('segments', 'readonly');
-      const store = tx.objectStore('segments');
-      for (let i = 1; i <= totalSegments; i++) {
-        const key = `${taskId}_seg${String(i).padStart(5, '0')}`;
-        try {
-          const blob = await new Promise<Blob>((res, rej) => {
-            const req = store.get(key);
-            req.onsuccess = () => res(req.result);
-            req.onerror = () => rej(req.error);
-          });
-          if (blob) blobs.push(blob);
-        } catch (err) {
-          db.close();
-          reject(new Error(`读取片段 ${i} 失败: ${(err as Error).message}`));
-          return;
-        }
-      }
-      db.close();
-      if (blobs.length === 0) {
-        reject(new Error('没有可合并的片段'));
-        return;
-      }
-      const combinedBlob = new Blob(blobs, { type: 'video/mp2t' });
-      saveBlobToBrowser(taskId, combinedBlob, fileName);
-
-      // 清理 IndexedDB
-      try {
-        const cleanReq = indexedDB.open('MoonTVDownloads', 1);
-        cleanReq.onsuccess = () => {
-          const cleanDb = cleanReq.result;
-          const cleanTx = cleanDb.transaction('segments', 'readwrite');
-          const cleanStore = cleanTx.objectStore('segments');
-          for (let i = 1; i <= totalSegments; i++) {
-            cleanStore.delete(`${taskId}_seg${String(i).padStart(5, '0')}`);
-          }
-          cleanTx.oncomplete = () => cleanDb.close();
-        };
-      } catch { /* ignore */ }
-      resolve();
-    };
-    request.onerror = () => reject(request.error);
   });
 }
 
