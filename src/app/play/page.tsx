@@ -824,10 +824,10 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
             `本地播放诊断:\n  M3U8内容前200字符:\n${playlistContent.substring(0, 200)}`
           );
 
-          // 创建 Blob URL 给 HLS.js
-          const blob = new Blob([playlistContent], { type: 'application/vnd.apple.mpegurl' });
-          const blobUrl = URL.createObjectURL(blob);
-          setVideoUrl(blobUrl);
+          // 创建 data URI 给 HLS.js（Android WebView 中 blob URL 无法被 fetch）
+          const dataUri = 'data:application/vnd.apple.mpegurl;base64,' + btoa(playlistContent);
+          console.log(`[本地播放] data URI 长度: ${dataUri.length}`);
+          setVideoUrl(dataUri);
           setLoading(false);
         } catch (e) {
           setError(`读取本地视频失败: ${(e as Error).message}`);
@@ -1551,23 +1551,32 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
               if (video.hls) {
                 video.hls.destroy();
               }
-              const hls = new Hls({
-                debug: false, // 关闭日志
-                enableWorker: true, // WebWorker 解码，降低主线程压力
-                lowLatencyMode: true, // 开启低延迟 LL-HLS
 
-                /* 缓冲/内存相关 */
-                maxBufferLength: 30, // 前向缓冲最大 30s，过大容易导致高延迟
-                backBufferLength: 30, // 仅保留 30s 已播放内容，避免内存占用
-                maxBufferSize: 60 * 1000 * 1000, // 约 60MB，超出后触发清理
+              console.log('[customType] 创建HLS实例...');
+              let hls: Hls;
+              try {
+                hls = new Hls({
+                  debug: false, // 关闭日志
+                  enableWorker: true, // WebWorker 解码，降低主线程压力
+                  lowLatencyMode: true, // 开启低延迟 LL-HLS
 
-                /* 自定义loader */
-                loader: isLocalPlayback
-                  ? createLocalSegmentLoader()
-                  : blockAdEnabledRef.current
-                  ? CustomHlsJsLoader
-                  : Hls.DefaultConfig.loader,
-              });
+                  /* 缓冲/内存相关 */
+                  maxBufferLength: 30, // 前向缓冲最大 30s，过大容易导致高延迟
+                  backBufferLength: 30, // 仅保留 30s 已播放内容，避免内存占用
+                  maxBufferSize: 60 * 1000 * 1000, // 约 60MB，超出后触发清理
+
+                  /* 自定义loader */
+                  loader: isLocalPlayback
+                    ? createLocalSegmentLoader()
+                    : blockAdEnabledRef.current
+                    ? CustomHlsJsLoader
+                    : Hls.DefaultConfig.loader,
+                });
+                console.log('[customType] HLS实例创建成功');
+              } catch (e) {
+                console.error(`[customType] HLS实例创建失败: ${(e as Error).message}\n  堆栈: ${(e as Error).stack}`);
+                return;
+              }
 
               hls.on(Hls.Events.MANIFEST_PARSED, () => {
                 console.log(`[HLS] MANIFEST_PARSED: 成功解析播放列表`);
@@ -1581,8 +1590,16 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
                 console.log(`[HLS] FRAG_LOADED: ${data.frag?.url || 'N/A'}`);
               });
 
-              hls.loadSource(url);
-              hls.attachMedia(video);
+              try {
+                console.log('[customType] 调用 loadSource...');
+                hls.loadSource(url);
+                console.log('[customType] loadSource 成功');
+                hls.attachMedia(video);
+                console.log('[customType] attachMedia 完成');
+              } catch (e) {
+                console.error(`[customType] loadSource/attachMedia 失败: ${(e as Error).message}`);
+                return;
+              }
               video.hls = hls;
 
               ensureVideoSource(video, url);
