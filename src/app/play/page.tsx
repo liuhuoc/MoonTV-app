@@ -827,15 +827,9 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
       hasInitializedRef.current = true;
 
       // 本地文件播放：用 HLS.js + 自定义 Loader 从磁盘读取 TS 分段
-      const source = typeof window !== 'undefined' 
-        ? new URLSearchParams(window.location.search).get('source') || currentSource || ''
-        : currentSource || searchParams?.get('source') || '';
-      const id = typeof window !== 'undefined'
-        ? new URLSearchParams(window.location.search).get('id') || currentId || ''
-        : currentId || searchParams?.get('id') || '';
-      if (source === 'local') {
+      if (currentSource === 'local') {
         const dlTasks = getDownloadTasks();
-        const dlTask = dlTasks.find(t => t.id === id);
+        const dlTask = dlTasks.find(t => t.id === currentId);
         if (!dlTask?.localPath) {
           setError('已下载文件信息不完整，请重新下载');
           setLoading(false);
@@ -859,10 +853,14 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
 
           // 浏览器端：从 IndexedDB 读取
           if (dlTask.writeDirectory === 'IndexedDB') {
-            localPlaybackCtx = { platform: 'browser', taskId: id || dlTask.id };
-            const playlistContent = await browserReadPlaylist(id || dlTask.id);
+            localPlaybackCtx = { platform: 'browser', taskId: currentId || dlTask.id };
+            const playlistContent = await browserReadPlaylist(currentId || dlTask.id);
+            console.log(
+              `本地播放诊断:\n  M3U8内容前200字符:\n${playlistContent.substring(0, 200)}`
+            );
             // 浏览器端可以直接用 data: URI，不会像 Android WebView 那样有问题
             const dataUri = 'data:application/vnd.apple.mpegurl;base64,' + btoa(playlistContent);
+            console.log(`[本地播放] data URI 长度: ${dataUri.length}`);
             setVideoUrl(dataUri);
             setLoading(false);
             return;
@@ -1512,8 +1510,6 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
       (!isLocalPlayback && !Hls) ||
       !videoUrl ||
       loading ||
-      !detail ||
-      !detail.episodes ||
       currentEpisodeIndex === null ||
       !artRef.current
     ) {
@@ -1522,6 +1518,8 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
 
     // 确保选集索引有效
     if (
+      !detail ||
+      !detail.episodes ||
       currentEpisodeIndex >= detail.episodes.length ||
       currentEpisodeIndex < 0
     ) {

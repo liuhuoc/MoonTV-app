@@ -6,24 +6,17 @@
  */
 
 import { Filesystem, Directory } from '@capacitor/filesystem';
+import { Capacitor } from '@capacitor/core';
 
 // ─── 平台检测 ──────────────────────────────────────────────────
 
-import { Capacitor } from '@capacitor/core';
-
 export function isCapacitorPlatform(): boolean {
   try {
-    // 真正的 Capacitor 原生平台才返回 true
-    // 在浏览器中即使导入了模块，isNativePlatform() 也返回 false
-    return Capacitor.isNativePlatform();
+    // Capacitor.getPlatform() 在浏览器中返回 'web'，在原生 App 中返回 'ios'/'android'
+    const platform = Capacitor.getPlatform();
+    return platform === 'ios' || platform === 'android';
   } catch {
-    // 如果检测失败，回退到原来的检查
-    try {
-      return typeof (globalThis as any).CapacitorHttp !== 'undefined'
-        && typeof (globalThis as any).CapacitorHttp.request === 'function';
-    } catch {
-      return false;
-    }
+    return false;
   }
 }
 

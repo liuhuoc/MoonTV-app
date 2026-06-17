@@ -33,19 +33,14 @@ export interface DownloadTask {
 
 const STORAGE_KEY = 'download_tasks';
 
-/** 检查是否在 Capacitor 环境 */
+/** 检查是否在 Capacitor 原生环境（iOS/Android App） */
 function isCapacitor(): boolean {
   try {
-    // 真正的 Capacitor 原生平台才返回 true
-    // 在浏览器中即使导入了模块，isNativePlatform() 也返回 false
-    return Capacitor.isNativePlatform();
+    // Capacitor.getPlatform() 在浏览器中返回 'web'，在原生 App 中返回 'ios'/'android'
+    const platform = Capacitor.getPlatform();
+    return platform === 'ios' || platform === 'android';
   } catch {
-    // 如果检测失败，回退到原来的检查
-    try {
-      return typeof CapacitorHttp !== 'undefined' && typeof CapacitorHttp.request === 'function';
-    } catch {
-      return false;
-    }
+    return false;
   }
 }
 

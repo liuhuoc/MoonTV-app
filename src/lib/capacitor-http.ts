@@ -10,15 +10,11 @@ let isCapacitorAvailable: boolean | null = null;
 function checkCapacitor(): boolean {
   if (isCapacitorAvailable !== null) return isCapacitorAvailable;
   try {
-    isCapacitorAvailable = Capacitor.isNativePlatform();
+    // Capacitor.getPlatform() 在浏览器中返回 'web'，在原生 App 中返回 'ios'/'android'
+    const platform = Capacitor.getPlatform();
+    isCapacitorAvailable = platform === 'ios' || platform === 'android';
   } catch {
-    try {
-      isCapacitorAvailable =
-        typeof CapacitorHttp !== 'undefined' &&
-        typeof CapacitorHttp.request === 'function';
-    } catch {
-      isCapacitorAvailable = false;
-    }
+    isCapacitorAvailable = false;
   }
   return isCapacitorAvailable;
 }
