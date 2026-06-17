@@ -6,13 +6,15 @@
  */
 
 import { Filesystem, Directory } from '@capacitor/filesystem';
+import { Capacitor } from '@capacitor/core';
 
 // ─── 平台检测 ──────────────────────────────────────────────────
 
 export function isCapacitorPlatform(): boolean {
   try {
-    return typeof (globalThis as any).CapacitorHttp !== 'undefined'
-      && typeof (globalThis as any).CapacitorHttp.request === 'function';
+    // Capacitor.getPlatform() 在浏览器中返回 'web'，在原生 App 中返回 'ios'/'android'
+    const platform = Capacitor.getPlatform();
+    return platform === 'ios' || platform === 'android';
   } catch {
     return false;
   }
@@ -21,7 +23,7 @@ export function isCapacitorPlatform(): boolean {
 // ─── IndexedDB 工具 ────────────────────────────────────────────
 
 const DB_NAME = 'MoonTVDownloads';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {

@@ -33,10 +33,12 @@ export interface DownloadTask {
 
 const STORAGE_KEY = 'download_tasks';
 
-/** 检查是否在 Capacitor 环境 */
+/** 检查是否在 Capacitor 原生环境（iOS/Android App） */
 function isCapacitor(): boolean {
   try {
-    return typeof CapacitorHttp !== 'undefined' && typeof CapacitorHttp.request === 'function';
+    // Capacitor.getPlatform() 在浏览器中返回 'web'，在原生 App 中返回 'ios'/'android'
+    const platform = Capacitor.getPlatform();
+    return platform === 'ios' || platform === 'android';
   } catch {
     return false;
   }
