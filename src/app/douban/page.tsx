@@ -23,7 +23,6 @@ function DoubanPageClient() {
   const [currentPage, setCurrentPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [selectorsReady, setSelectorsReady] = useState(false);
   const observerRef = useRef<IntersectionObserver | null>(null);
   const loadingRef = useRef<HTMLDivElement>(null);
   const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -56,20 +55,6 @@ function DoubanPageClient() {
   const isMovieTimeCursorMode =
     (type === 'movie' || type === 'animation') && sortSelection === '时间' && yearSelection === '全部';
 
-  // 初始化时标记选择器为准备好状态
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setSelectorsReady(true);
-    }, 50);
-    return () => clearTimeout(timer);
-  }, []);
-
-  // type变化时立即重置selectorsReady（最高优先级）
-  useEffect(() => {
-    setSelectorsReady(false);
-    setLoading(true);
-  }, [type]);
-
   // 当type变化时重置选择器状态
   useEffect(() => {
     if (type === 'movie') {
@@ -98,12 +83,6 @@ function DoubanPageClient() {
       setYearSelection('全部');
       setSortSelection('时间');
     }
-
-    const timer = setTimeout(() => {
-      setSelectorsReady(true);
-    }, 50);
-
-    return () => clearTimeout(timer);
   }, [type]);
 
   // 生成骨架屏数据
@@ -232,10 +211,8 @@ function DoubanPageClient() {
     type,
   ]);
 
-  // 只在选择器准备好后才加载数据
+  // 初始化时直接触发数据加载
   useEffect(() => {
-    if (!selectorsReady) return;
-
     setDoubanData([]);
     setCurrentPage(0);
     setHasMore(true);
@@ -261,7 +238,6 @@ function DoubanPageClient() {
       }
     };
   }, [
-    selectorsReady,
     type,
     primarySelection,
     secondarySelection,
@@ -477,7 +453,7 @@ function DoubanPageClient() {
         <div className='max-w-[95%] mx-auto mt-8 overflow-visible'>
           {/* 内容网格 */}
           <div className='grid grid-cols-3 gap-x-3 gap-y-14 sm:gap-y-20 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fit,minmax(180px,1fr))] sm:gap-x-10'>
-            {loading || !selectorsReady
+            {loading
               ? skeletonData.map((index) => <DoubanCardSkeleton key={index} />)
               : doubanData.map((item, index) => (
                   <div key={`${item.title}-${index}`} className='w-full'>
@@ -538,7 +514,7 @@ function DoubanPageClient() {
 
 export default function DoubanPage() {
   return (
-    <Suspense>
+    <Suspense fallback={<div className="flex items-center justify-center py-16"><div className="w-8 h-8 border-4 border-green-500 border-t-transparent rounded-full animate-spin"></div></div>}>
       <DoubanPageClient />
     </Suspense>
   );

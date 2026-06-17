@@ -78,8 +78,8 @@ async function fetchWithCorsProxy(apiPath: string): Promise<Response> {
   }
 
   // 第二步：尝试代理（作为后备）
+  // 注意：不使用 AbortController，因为 abort 会导致已成功请求的 response body 不可读
   const proxies = getProxyList();
-  const controller = new AbortController();
   const TIMEOUT_MS = 6000;
 
   const requests = proxies.map(async (proxyFn) => {
@@ -88,7 +88,6 @@ async function fetchWithCorsProxy(apiPath: string): Promise<Response> {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
       },
-      signal: controller.signal,
     });
     const timeout = new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error('timeout')), TIMEOUT_MS)
@@ -96,12 +95,10 @@ async function fetchWithCorsProxy(apiPath: string): Promise<Response> {
     try {
       const res = await Promise.race([fetchPromise, timeout]);
       if (res.ok) {
-        controller.abort();
         return res;
       }
       throw new Error(`HTTP ${res.status}`);
     } catch (err) {
-      if ((err as Error).name === 'AbortError') throw err;
       throw err;
     }
   });
@@ -109,7 +106,6 @@ async function fetchWithCorsProxy(apiPath: string): Promise<Response> {
   try {
     return await Promise.any(requests);
   } catch {
-    controller.abort();
     throw new Error('所有 CORS 代理均不可用');
   }
 }
@@ -373,9 +369,12 @@ export async function getDoubanCategories(
       throw new Error(`HTTP error! Status: ${response.status}`);
     }
 
+    const responseText = await response.text();
+    const responseJson = JSON.parse(responseText);
+
     let list: DoubanItem[];
     if (isMovieSubjectCollection) {
-      const doubanData = (await response.json()) as DoubanSubjectCollectionApiResponse;
+      const doubanData = responseJson as DoubanSubjectCollectionApiResponse;
       list = doubanData.subject_collection_items.map((item) => ({
         id: item.id,
         title: item.title,
@@ -392,7 +391,7 @@ export async function getDoubanCategories(
         year: item.card_subtitle?.match(/(\d{4})/)?.[1] || '',
       }));
     } else if (isMovieTagsFilter || isAnimationFilter) {
-      const doubanData = (await response.json()) as {
+      const doubanData = responseJson as {
         data: Array<{
           id: string;
           title: string;
@@ -400,6 +399,7 @@ export async function getDoubanCategories(
           rate: string;
         }>;
       };
+      console.log('[douban] 解析后 data 数量:', doubanData.data?.length, 'pageLimit:', pageLimit);
       list = doubanData.data.slice(0, pageLimit).map((item) => ({
         id: item.id,
         title: item.title,
@@ -408,7 +408,7 @@ export async function getDoubanCategories(
         year: year && year !== '全部' ? year : '',
       }));
     } else {
-      const doubanData = (await response.json()) as DoubanCategoryApiResponse;
+      const doubanData = responseJson as DoubanCategoryApiResponse;
       list = doubanData.items.map((item) => ({
         id: item.id,
         title: item.title,
