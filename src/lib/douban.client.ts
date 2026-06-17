@@ -399,7 +399,6 @@ export async function getDoubanCategories(
           rate: string;
         }>;
       };
-      console.log('[douban] 解析后 data 数量:', doubanData.data?.length, 'pageLimit:', pageLimit);
       list = doubanData.data.slice(0, pageLimit).map((item) => ({
         id: item.id,
         title: item.title,
