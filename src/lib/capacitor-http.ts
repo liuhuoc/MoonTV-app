@@ -3,18 +3,22 @@
  * 在 Capacitor 原生环境中使用 CapacitorHttp（绕过 CORS），
  * 在浏览器开发环境中回退到原生 fetch。
  */
-import { CapacitorHttp, type HttpResponse } from '@capacitor/core';
+import { CapacitorHttp, Capacitor, type HttpResponse } from '@capacitor/core';
 
 let isCapacitorAvailable: boolean | null = null;
 
 function checkCapacitor(): boolean {
   if (isCapacitorAvailable !== null) return isCapacitorAvailable;
   try {
-    isCapacitorAvailable =
-      typeof CapacitorHttp !== 'undefined' &&
-      typeof CapacitorHttp.request === 'function';
+    isCapacitorAvailable = Capacitor.isNativePlatform();
   } catch {
-    isCapacitorAvailable = false;
+    try {
+      isCapacitorAvailable =
+        typeof CapacitorHttp !== 'undefined' &&
+        typeof CapacitorHttp.request === 'function';
+    } catch {
+      isCapacitorAvailable = false;
+    }
   }
   return isCapacitorAvailable;
 }

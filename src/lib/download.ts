@@ -36,9 +36,16 @@ const STORAGE_KEY = 'download_tasks';
 /** 检查是否在 Capacitor 环境 */
 function isCapacitor(): boolean {
   try {
-    return typeof CapacitorHttp !== 'undefined' && typeof CapacitorHttp.request === 'function';
+    // 真正的 Capacitor 原生平台才返回 true
+    // 在浏览器中即使导入了模块，isNativePlatform() 也返回 false
+    return Capacitor.isNativePlatform();
   } catch {
-    return false;
+    // 如果检测失败，回退到原来的检查
+    try {
+      return typeof CapacitorHttp !== 'undefined' && typeof CapacitorHttp.request === 'function';
+    } catch {
+      return false;
+    }
   }
 }
 
