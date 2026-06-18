@@ -369,8 +369,7 @@ export async function getDoubanCategories(
       throw new Error(`HTTP error! Status: ${response.status}`);
     }
 
-    const responseText = await response.text();
-    const responseJson = JSON.parse(responseText);
+    const responseJson = await response.json();
 
     let list: DoubanItem[];
     if (isMovieSubjectCollection) {

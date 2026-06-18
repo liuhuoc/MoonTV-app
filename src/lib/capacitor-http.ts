@@ -3,16 +3,17 @@
  * 在 Capacitor 原生环境中使用 CapacitorHttp（绕过 CORS），
  * 在浏览器开发环境中回退到原生 fetch。
  */
-import { CapacitorHttp, Capacitor, type HttpResponse } from '@capacitor/core';
+import { CapacitorHttp, type HttpResponse } from '@capacitor/core';
 
 let isCapacitorAvailable: boolean | null = null;
 
 function checkCapacitor(): boolean {
   if (isCapacitorAvailable !== null) return isCapacitorAvailable;
+  if (typeof window === 'undefined') { isCapacitorAvailable = false; return false; }
   try {
-    // Capacitor.getPlatform() 在浏览器中返回 'web'，在原生 App 中返回 'ios'/'android'
-    const platform = Capacitor.getPlatform();
-    isCapacitorAvailable = platform === 'ios' || platform === 'android';
+    const win = window as any;
+    // Android: 原生注入 androidBridge / iOS: 原生注入 webkit.messageHandlers.bridge
+    isCapacitorAvailable = !!(win.androidBridge || win.webkit?.messageHandlers?.bridge);
   } catch {
     isCapacitorAvailable = false;
   }
@@ -67,7 +68,12 @@ export async function nativeFetch(
           if (typeof data === 'string') return JSON.parse(data);
           return JSON.parse(data as string);
         },
-        text: async () => response.data as string,
+        text: async () => {
+          const data = response.data;
+          if (typeof data === 'string') return data;
+          if (typeof data === 'object' && data !== null) return JSON.stringify(data);
+          return String(data);
+        },
         headers: new Headers(response.headers as Record<string, string>),
         redirected: false,
         type: 'basic' as ResponseType,
