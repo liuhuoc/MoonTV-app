@@ -1682,6 +1682,10 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
                     lastFragUrl: frags[frags.length - 1]?.url,
                   }));
                 }
+                // 播放列表解析完成后，显式调用 startLoad 开始加载片段
+                console.log('[HLS] MANIFEST_PARSED 后调用 startLoad...');
+                hls.startLoad();
+                console.log('[HLS] MANIFEST_PARSED 后 startLoad 完成');
               });
 
               // MEDIA_ATTACHED 后触发播放
