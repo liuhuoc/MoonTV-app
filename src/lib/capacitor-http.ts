@@ -3,16 +3,17 @@
  * 在 Capacitor 原生环境中使用 CapacitorHttp（绕过 CORS），
  * 在浏览器开发环境中回退到原生 fetch。
  */
-import { CapacitorHttp, Capacitor, type HttpResponse } from '@capacitor/core';
+import { CapacitorHttp, type HttpResponse } from '@capacitor/core';
 
 let isCapacitorAvailable: boolean | null = null;
 
 function checkCapacitor(): boolean {
   if (isCapacitorAvailable !== null) return isCapacitorAvailable;
+  if (typeof window === 'undefined') { isCapacitorAvailable = false; return false; }
   try {
-    // Capacitor.getPlatform() 在浏览器中返回 'web'，在原生 App 中返回 'ios'/'android'
-    const platform = Capacitor.getPlatform();
-    isCapacitorAvailable = platform === 'ios' || platform === 'android';
+    const win = window as any;
+    // Android: 原生注入 androidBridge / iOS: 原生注入 webkit.messageHandlers.bridge
+    isCapacitorAvailable = !!(win.androidBridge || win.webkit?.messageHandlers?.bridge);
   } catch {
     isCapacitorAvailable = false;
   }

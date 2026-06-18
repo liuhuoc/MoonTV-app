@@ -6,15 +6,15 @@
  */
 
 import { Filesystem, Directory } from '@capacitor/filesystem';
-import { Capacitor } from '@capacitor/core';
 
 // ─── 平台检测 ──────────────────────────────────────────────────
 
+/** 直接检测原生桥接对象，浏览器中不存在这些对象 */
 export function isCapacitorPlatform(): boolean {
+  if (typeof window === 'undefined') return false;
   try {
-    // Capacitor.getPlatform() 在浏览器中返回 'web'，在原生 App 中返回 'ios'/'android'
-    const platform = Capacitor.getPlatform();
-    return platform === 'ios' || platform === 'android';
+    const win = window as any;
+    return !!(win.androidBridge || win.webkit?.messageHandlers?.bridge);
   } catch {
     return false;
   }
