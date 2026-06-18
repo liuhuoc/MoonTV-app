@@ -855,6 +855,7 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
           // 浏览器端：从 IndexedDB 读取
           if (dlTask.writeDirectory === 'IndexedDB') {
             localPlaybackCtx = { platform: 'browser', taskId: currentId || dlTask.id };
+            console.log('[initAll] localPlaybackCtx 已设置 (browser):', localPlaybackCtx);
             const playlistContent = await browserReadPlaylist(currentId || dlTask.id);
             console.log(
               `本地播放诊断:\n  M3U8内容前200字符:\n${playlistContent.substring(0, 200)}`
@@ -876,6 +877,7 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
           const writeDirEnum = dlTask.writeDirectory === 'Library' ? Directory.Library : Directory.Data;
           const dirPath = dlTask.localPath.replace(/\/playlist\.m3u8$/, '');
           localPlaybackCtx = { platform: 'capacitor', dirPath, writeDirEnum };
+          console.log('[initAll] localPlaybackCtx 已设置 (capacitor):', localPlaybackCtx);
 
           // 读取 M3U8 播放列表
           const result = await Filesystem.readFile({ path: dlTask.localPath, directory: writeDirEnum });
