@@ -33,15 +33,12 @@ export interface DownloadTask {
 
 const STORAGE_KEY = 'download_tasks';
 
-/** 检查是否在 Capacitor 原生环境（iOS/Android App）
- *  直接检测原生桥接对象，浏览器中不存在这些对象 */
+/** 检查是否在 Capacitor 原生环境（iOS/Android App） */
 function isCapacitor(): boolean {
-  if (typeof window === 'undefined') return false;
   try {
-    const win = window as any;
-    // Android: 原生注入 androidBridge
-    // iOS: 原生注入 webkit.messageHandlers.bridge
-    return !!(win.androidBridge || win.webkit?.messageHandlers?.bridge);
+    // Capacitor.getPlatform() 在浏览器中返回 'web'，在原生 App 中返回 'ios'/'android'
+    const platform = Capacitor.getPlatform();
+    return platform === 'ios' || platform === 'android';
   } catch {
     return false;
   }

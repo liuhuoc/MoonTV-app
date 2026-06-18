@@ -827,16 +827,9 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
       hasInitializedRef.current = true;
 
       // 本地文件播放：用 HLS.js + 自定义 Loader 从磁盘读取 TS 分段
-      // 使用 window.location.search 作为 fallback，避免 searchParams 为 null 时丢失参数
-      const source = typeof window !== 'undefined'
-        ? new URLSearchParams(window.location.search).get('source') || currentSource || ''
-        : currentSource || searchParams?.get('source') || '';
-      const id = typeof window !== 'undefined'
-        ? new URLSearchParams(window.location.search).get('id') || currentId || ''
-        : currentId || searchParams?.get('id') || '';
-      if (source === 'local') {
+      if (currentSource === 'local') {
         const dlTasks = getDownloadTasks();
-        const dlTask = dlTasks.find(t => t.id === id);
+        const dlTask = dlTasks.find(t => t.id === currentId);
         if (!dlTask?.localPath) {
           setError('已下载文件信息不完整，请重新下载');
           setLoading(false);
@@ -860,9 +853,8 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
 
           // 浏览器端：从 IndexedDB 读取
           if (dlTask.writeDirectory === 'IndexedDB') {
-            const taskId = id || dlTask.id;
-            localPlaybackCtx = { platform: 'browser', taskId };
-            const playlistContent = await browserReadPlaylist(taskId);
+            localPlaybackCtx = { platform: 'browser', taskId: currentId || dlTask.id };
+            const playlistContent = await browserReadPlaylist(currentId || dlTask.id);
             console.log(
               `本地播放诊断:\n  M3U8内容前200字符:\n${playlistContent.substring(0, 200)}`
             );
@@ -1518,8 +1510,6 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
       (!isLocalPlayback && !Hls) ||
       !videoUrl ||
       loading ||
-      !detail ||
-      !detail.episodes ||
       currentEpisodeIndex === null ||
       !artRef.current
     ) {
@@ -1528,6 +1518,8 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
 
     // 确保选集索引有效
     if (
+      !detail ||
+      !detail.episodes ||
       currentEpisodeIndex >= detail.episodes.length ||
       currentEpisodeIndex < 0
     ) {
@@ -1629,7 +1621,13 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
               console.log('[customType] 创建HLS实例...');
               let hls: Hls;
               try {
-                hls = new Hls({
+                const customLoader = isLocalPlayback
+                  ? createLocalSegmentLoader()
+                  : blockAdEnabledRef.current
+                  ? CustomHlsJsLoader
+                  : Hls.DefaultConfig.loader;
+
+                const hlsConfig: any = {
                   debug: false, // 关闭日志
                   enableWorker: true, // WebWorker 解码，降低主线程压力
                   lowLatencyMode: true, // 开启低延迟 LL-HLS
@@ -1641,12 +1639,16 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
                   maxBufferSize: 60 * 1000 * 1000, // 约 60MB，超出后触发清理
 
                   /* 自定义loader */
-                  loader: isLocalPlayback
-                    ? createLocalSegmentLoader()
-                    : blockAdEnabledRef.current
-                    ? CustomHlsJsLoader
-                    : Hls.DefaultConfig.loader,
-                });
+                  loader: customLoader,
+                };
+
+                // 本地播放时显式设置 fLoader/pLoader，确保片段也被 LocalLoader 拦截
+                if (isLocalPlayback) {
+                  hlsConfig.fLoader = customLoader;
+                  hlsConfig.pLoader = customLoader;
+                }
+
+                hls = new Hls(hlsConfig);
                 console.log('[customType] HLS实例创建成功');
               } catch (e) {
                 console.error(`[customType] HLS实例创建失败: ${(e as Error).message}\n  堆栈: ${(e as Error).stack}`);
@@ -1657,11 +1659,14 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
                 const levels = data.levels || [];
                 console.log(`[HLS] MANIFEST_PARSED: 成功解析播放列表, ${levels.length} 个level`);
                 if (levels.length > 0) {
+                  const frags = levels[0].details?.fragments || [];
                   console.log(`[HLS] level[0] details:`, JSON.stringify({
                     bitrate: levels[0].bitrate,
                     width: levels[0].width,
                     height: levels[0].height,
-                    fragments: levels[0].details?.fragments?.length || 0,
+                    fragments: frags.length,
+                    firstFragUrl: frags[0]?.url,
+                    lastFragUrl: frags[frags.length - 1]?.url,
                   }));
                 }
               });
