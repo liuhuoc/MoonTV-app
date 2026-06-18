@@ -67,7 +67,12 @@ export async function nativeFetch(
           if (typeof data === 'string') return JSON.parse(data);
           return JSON.parse(data as string);
         },
-        text: async () => response.data as string,
+        text: async () => {
+          const data = response.data;
+          if (typeof data === 'string') return data;
+          if (typeof data === 'object' && data !== null) return JSON.stringify(data);
+          return String(data);
+        },
         headers: new Headers(response.headers as Record<string, string>),
         redirected: false,
         type: 'basic' as ResponseType,
