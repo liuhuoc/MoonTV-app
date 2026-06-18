@@ -1,5 +1,33 @@
 apply plugin: 'com.android.application'
 
+// 根据 git commit 数量动态生成 versionCode，确保每次推送都能升级安装
+def getVersionCode = { ->
+    try {
+        def process = new ProcessBuilder('git', 'rev-list', '--count', 'HEAD')
+            .directory(rootProject.projectDir)
+            .start()
+        def code = process.inputStream.text.trim().toInteger()
+        process.waitFor()
+        return code > 0 ? code : 1
+    } catch (Exception e) {
+        return 1
+    }
+}
+
+// 根据最近 tag 生成 versionName，无 tag 时默认 1.0
+def getVersionName = { ->
+    try {
+        def process = new ProcessBuilder('git', 'describe', '--tags', '--always')
+            .directory(rootProject.projectDir)
+            .start()
+        def name = process.inputStream.text.trim()
+        process.waitFor()
+        return name ?: "1.0"
+    } catch (Exception e) {
+        return "1.0"
+    }
+}
+
 android {
     namespace "com.moontv.app"
     compileSdk rootProject.ext.compileSdkVersion
@@ -7,8 +35,8 @@ android {
         applicationId "com.moontv.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode getVersionCode()
+        versionName getVersionName()
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

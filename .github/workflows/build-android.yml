@@ -18,6 +18,8 @@ jobs:
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # 需要完整 git 历史来计算 versionCode
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -48,14 +50,23 @@ jobs:
         env:
           CAPACITOR_SERVER_URL: ${{ github.event.inputs.server_url || secrets.CAPACITOR_SERVER_URL || '' }}
 
-      - name: Build Debug APK
+      - name: Generate release keystore (if not exists)
         run: |
           cd android
-          ./gradlew assembleDebug
+          if [ ! -f moontv-release-key.keystore ]; then
+            keytool -genkey -v -keystore moontv-release-key.keystore -alias moontv -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass moontv123 -keypass moontv123 \
+              -dname "CN=MoonTV, OU=MoonTV, O=MoonTV, L=Beijing, ST=Beijing, C=CN"
+          fi
+
+      - name: Build Release APK
+        run: |
+          cd android
+          ./gradlew assembleRelease
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: moontv-debug-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: moontv-release-apk
+          path: android/app/build/outputs/apk/release/app-release.apk
           retention-days: 30
