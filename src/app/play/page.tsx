@@ -1630,7 +1630,7 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
 
                 const hlsConfig: any = {
                   debug: false, // 关闭日志
-                  enableWorker: true, // WebWorker 解码，降低主线程压力
+                  enableWorker: !isLocalPlayback, // 本地播放禁用 Worker，否则自定义 loader 不生效
                   lowLatencyMode: true, // 开启低延迟 LL-HLS
                   autoStartLoad: true, // 让 HLS.js 自动管理加载
 
@@ -1659,6 +1659,18 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
               hls.on(Hls.Events.MANIFEST_PARSED, (_event: any, data: any) => {
                 const levels = data.levels || [];
                 console.log(`[HLS] MANIFEST_PARSED: 成功解析播放列表, ${levels.length} 个level`);
+                console.log('[HLS] hls.levels.length:', hls.levels.length);
+                if (hls.levels.length > 0) {
+                  const level = hls.levels[0];
+                  console.log('[HLS] level[0] details:', {
+                    bitrate: level.bitrate,
+                    width: level.width,
+                    height: level.height,
+                    url: level.url,
+                    details: level.details ? 'present' : 'missing',
+                    fragments: level.details?.fragments?.length || 0,
+                  });
+                }
                 if (levels.length > 0) {
                   const frags = levels[0].details?.fragments || [];
                   console.log(`[HLS] level[0] details:`, JSON.stringify({
@@ -1672,9 +1684,13 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
                 }
               });
 
-              // MEDIA_ATTACHED 时由 HLS.js 自动加载（autoStartLoad: true）
+              // MEDIA_ATTACHED 后手动触发片段加载
               hls.on(Hls.Events.MEDIA_ATTACHED, () => {
                 console.log('[HLS] MEDIA_ATTACHED');
+                // 显式调用 startLoad 确保片段加载开始
+                console.log('[HLS] 调用 startLoad...');
+                hls.startLoad();
+                console.log('[HLS] startLoad 完成');
                 try {
                   const playResult = video.play();
                   console.log(`[HLS] video.play() 返回: ${typeof playResult}`);
