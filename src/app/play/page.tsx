@@ -1684,13 +1684,10 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
                 }
               });
 
-              // MEDIA_ATTACHED 后手动触发片段加载
+              // MEDIA_ATTACHED 后触发播放
               hls.on(Hls.Events.MEDIA_ATTACHED, () => {
                 console.log('[HLS] MEDIA_ATTACHED');
-                // 显式调用 startLoad 确保片段加载开始
-                console.log('[HLS] 调用 startLoad...');
-                hls.startLoad();
-                console.log('[HLS] startLoad 完成');
+                // autoStartLoad: true 时不需要手动调用 startLoad
                 try {
                   const playResult = video.play();
                   console.log(`[HLS] video.play() 返回: ${typeof playResult}`);
