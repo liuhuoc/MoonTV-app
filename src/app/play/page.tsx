@@ -1632,7 +1632,7 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
                   debug: false, // 关闭日志
                   enableWorker: !isLocalPlayback, // 本地播放禁用 Worker，否则自定义 loader 不生效
                   lowLatencyMode: true, // 开启低延迟 LL-HLS
-                  autoStartLoad: true, // 让 HLS.js 自动管理加载
+                  autoStartLoad: !isLocalPlayback, // 本地播放手动控制加载时机
 
                   /* 缓冲/内存相关 */
                   maxBufferLength: 30, // 前向缓冲最大 30s，过大容易导致高延迟
