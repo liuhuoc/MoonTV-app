@@ -541,6 +541,7 @@ function createLocalSegmentLoader() {
     // eslint-disable-next-line @typescript-eslint/no-empty-function, @typescript-eslint/no-unused-vars
     constructor(_config: any) {
       this.context = null;
+      console.log('[LocalLoader] 实例化');
     }
 
     // eslint-disable-next-line @typescript-eslint/no-empty-function
@@ -1631,7 +1632,7 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
                   debug: false, // 关闭日志
                   enableWorker: true, // WebWorker 解码，降低主线程压力
                   lowLatencyMode: true, // 开启低延迟 LL-HLS
-                  autoStartLoad: false, // 关掉自动启动，等到 MEDIA_ATTACHED 后手动 startLoad
+                  autoStartLoad: true, // 让 HLS.js 自动管理加载
 
                   /* 缓冲/内存相关 */
                   maxBufferLength: 30, // 前向缓冲最大 30s，过大容易导致高延迟
@@ -1671,12 +1672,9 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
                 }
               });
 
-              // MEDIA_ATTACHED 在 MANIFEST_PARSED 之后才触发，此时才能 startLoad
+              // MEDIA_ATTACHED 时由 HLS.js 自动加载（autoStartLoad: true）
               hls.on(Hls.Events.MEDIA_ATTACHED, () => {
                 console.log('[HLS] MEDIA_ATTACHED');
-                console.log('[HLS] 调用 startLoad...');
-                hls.startLoad();
-                console.log('[HLS] startLoad 完成');
                 try {
                   const playResult = video.play();
                   console.log(`[HLS] video.play() 返回: ${typeof playResult}`);
