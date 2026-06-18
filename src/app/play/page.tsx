@@ -1629,15 +1629,15 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
                   : Hls.DefaultConfig.loader;
 
                 const hlsConfig: any = {
-                  debug: false, // 关闭日志
-                  enableWorker: !isLocalPlayback, // 本地播放禁用 Worker，否则自定义 loader 不生效
-                  lowLatencyMode: true, // 开启低延迟 LL-HLS
-                  autoStartLoad: !isLocalPlayback, // 本地播放手动控制加载时机
+                  debug: false,
+                  enableWorker: !isLocalPlayback,
+                  lowLatencyMode: false, // 本地播放不需要低延迟模式
+                  autoStartLoad: true, // 让 HLS.js 自动管理加载时机
 
                   /* 缓冲/内存相关 */
-                  maxBufferLength: 30, // 前向缓冲最大 30s，过大容易导致高延迟
-                  backBufferLength: 30, // 仅保留 30s 已播放内容，避免内存占用
-                  maxBufferSize: 60 * 1000 * 1000, // 约 60MB，超出后触发清理
+                  maxBufferLength: 30,
+                  backBufferLength: 30,
+                  maxBufferSize: 60 * 1000 * 1000,
 
                   /* 自定义loader */
                   loader: customLoader,
@@ -1656,51 +1656,6 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
                 return;
               }
 
-              // 本地播放时，在 MEDIA_ATTACHED 后调用 startLoad
-              let mediaAttached = false;
-              let manifestParsed = false;
-              
-              hls.on(Hls.Events.MANIFEST_PARSED, (_event: any, data: any) => {
-                manifestParsed = true;
-                const levels = data.levels || [];
-                console.log(`[HLS] MANIFEST_PARSED: 成功解析播放列表, ${levels.length} 个level`);
-                if (levels.length > 0) {
-                  const frags = levels[0].details?.fragments || [];
-                  console.log(`[HLS] level[0] details:`, JSON.stringify({
-                    fragments: frags.length,
-                    firstFragUrl: frags[0]?.url,
-                    lastFragUrl: frags[frags.length - 1]?.url,
-                  }));
-                }
-                // 如果 media 已经绑定，立即开始加载
-                if (isLocalPlayback && mediaAttached) {
-                  console.log('[HLS] 本地播放: media已绑定，立即调用 startLoad(0)...');
-                  hls.startLoad(0);
-                  console.log('[HLS] 本地播放: startLoad 完成');
-                }
-              });
-
-              // MEDIA_ATTACHED 后触发播放
-              hls.on(Hls.Events.MEDIA_ATTACHED, () => {
-                mediaAttached = true;
-                console.log('[HLS] MEDIA_ATTACHED');
-                // 本地播放需要在 MEDIA_ATTACHED 后手动调用 startLoad
-                if (isLocalPlayback && manifestParsed) {
-                  console.log('[HLS] 本地播放: manifest已解析，调用 startLoad(0)...');
-                  hls.startLoad(0);
-                  console.log('[HLS] 本地播放: startLoad 完成');
-                }
-                try {
-                  const playResult = video.play();
-                  console.log(`[HLS] video.play() 返回: ${typeof playResult}`);
-                  if (playResult && typeof playResult.then === 'function') {
-                    playResult.then(() => console.log('[HLS] video.play() resolve')).catch((e: any) => console.warn(`[HLS] video.play() reject: ${e?.message || e}`));
-                  }
-                } catch (e: any) {
-                  console.warn(`[HLS] video.play() 同步异常: ${e?.message || e}`);
-                }
-              });
-
               // 监听分段加载事件
               hls.on(Hls.Events.FRAG_LOADING, (_event: any, data: any) => {
                 console.log(`[HLS] FRAG_LOADING: ${data.frag?.url || 'N/A'}, sn=${data.frag?.sn}, level=${data.frag?.level}`);
@@ -1716,9 +1671,27 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
                 console.log('[customType] 绑定video...');
                 hls.attachMedia(video);
                 console.log('[customType] attachMedia 完成');
-                console.log('[customType] 调用 loadSource...');
-                hls.loadSource(url);
-                console.log('[customType] loadSource 成功');
+
+                // 本地播放：先等 MEDIA_ATTACHED，再 loadSource
+                if (isLocalPlayback) {
+                  console.log('[customType] 本地播放：等待 MEDIA_ATTACHED 后再 loadSource');
+                  hls.on(Hls.Events.MEDIA_ATTACHED, () => {
+                    console.log('[HLS] MEDIA_ATTACHED，现在调用 loadSource');
+                    hls.loadSource(url);
+                    console.log('[customType] loadSource 成功');
+                    // autoStartLoad: true 会自动开始加载
+                    video.play().then(() => {
+                      console.log('[HLS] video.play() resolve');
+                    }).catch((e: any) => {
+                      console.warn(`[HLS] video.play() reject: ${e?.message || e}`);
+                    });
+                  });
+                } else {
+                  // 远程播放：直接 loadSource
+                  console.log('[customType] 调用 loadSource...');
+                  hls.loadSource(url);
+                  console.log('[customType] loadSource 成功');
+                }
               } catch (e) {
                 console.error(`[customType] loadSource/attachMedia 失败: ${(e as Error).message}`);
                 return;
