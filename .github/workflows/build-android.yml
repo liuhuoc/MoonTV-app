@@ -53,13 +53,6 @@ jobs:
         env:
           CAPACITOR_SERVER_URL: ${{ github.event.inputs.server_url || secrets.CAPACITOR_SERVER_URL || '' }}
 
-      # ── 正式签名密钥（从 GitHub Secrets 读取） ──────────────────
-      - name: Decode release keystore
-        run: |
-          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android/moontv-release-key.keystore
-        env:
-          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-
       # ── 自动递增版本号（基于 git commit 数） ───────────────────
       - name: Compute version info
         id: version
@@ -88,10 +81,6 @@ jobs:
         run: |
           cd android
           ./gradlew assembleRelease
-        env:
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
 
       - name: Prepare signed APK
         run: |

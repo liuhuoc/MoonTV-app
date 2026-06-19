@@ -46,10 +46,10 @@ android {
     }
     signingConfigs {
         release {
-            keyAlias System.getenv("KEY_ALIAS") ?: 'moontv'
-            keyPassword System.getenv("KEY_PASSWORD") ?: 'moontv123'
+            keyAlias System.getenv("KEY_ALIAS") ?: 'moontv-release'
+            keyPassword System.getenv("KEY_PASSWORD") ?: 'MoonTV2024Release'
             storeFile file('../moontv-release-key.keystore')
-            storePassword System.getenv("KEYSTORE_PASSWORD") ?: 'moontv123'
+            storePassword System.getenv("KEYSTORE_PASSWORD") ?: 'MoonTV2024Release'
         }
     }
     buildTypes {
