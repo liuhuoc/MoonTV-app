@@ -1546,12 +1546,12 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
 
                 // 诊断：检查 loadSource 后的状态
                 setTimeout(() => {
-                  addDebugLog(`HLS state: media=${!!hls.media}, levels=${hls.levels?.length}, autoStartLoad=${(hls as any).config?.autoStartLoad}`);
-                  // 手动触发 startLoad 确保片段加载启动
-                  if (hls.media && hls.levels?.length) {
-                    addDebugLog('HLS: manually calling startLoad()');
-                    hls.startLoad();
-                  }
+                  const lc = (hls as any).levelController;
+                  const lcLevels = lc?.levels || lc?._levels;
+                  addDebugLog(`HLS state: media=${!!hls.media}, hls.levels=${hls.levels?.length}, lc._levels=${lcLevels?.length}, lc=${!!lc}, autoStartLoad=${(hls as any).config?.autoStartLoad}`);
+                  // 无条件手动调用 startLoad
+                  addDebugLog('HLS: manually calling startLoad()');
+                  hls.startLoad();
                 }, 100);
               } catch (e) {
                 addDebugLog(`customType: attachMedia/loadSource failed: ${(e as Error).message}`);
