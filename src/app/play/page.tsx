@@ -380,7 +380,7 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
         // HLS.js fragment context 用 context.frag 标识，manifest/level 用 context.type
         if (context.frag) {
           // 片段加载：从 URL 中提取分段索引
-          const match = context.url.match(/local:\/\/seg_(\d+)\.ts/);
+          const match = context.url.match(/seg_(\d+)\.ts/);
           addDebugLog(`LocalVideoLoader: fragment request, url=${String(context.url).substring(0, 80)}, match=${!!match}`);
           if (!match) {
             addDebugLog(`LocalVideoLoader: fragment URL does not match pattern!`);
@@ -698,7 +698,7 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
           ];
           for (let i = 0; i < segCount; i++) {
             m3u8Lines.push(`#EXTINF:${segmentDurations[i].toFixed(3)},`);
-            m3u8Lines.push(`local://seg_${String(i).padStart(5, '0')}.ts`);
+            m3u8Lines.push(`seg_${String(i).padStart(5, '0')}.ts`);
           }
           m3u8Lines.push('#EXT-X-ENDLIST');
           const m3u8Content = m3u8Lines.join('\n');
