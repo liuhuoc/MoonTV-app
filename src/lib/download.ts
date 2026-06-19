@@ -4,6 +4,7 @@ import { CapacitorHttp, type HttpResponse, Capacitor } from '@capacitor/core';
 import { Directory, Filesystem } from '@capacitor/filesystem';
 import { getDownloadSettings } from './settings';
 import { browserSaveSegment, browserSavePlaylist, browserDeleteTask } from './storage';
+import { deletePlayRecord } from './db.client';
 
 const activeAbortControllers = new Map<string, AbortController>();
 
@@ -126,6 +127,20 @@ export async function deleteDownloadTask(id: string): Promise<void> {
 
   const filtered = tasks.filter(t => t.id !== id);
   saveTasks(filtered);
+
+  // 删除历史记录
+  try {
+    await deletePlayRecord('local', id);
+  } catch { /* ignore */ }
+
+  // Capacitor 环境：删除下载的文件
+  if (isCapacitor()) {
+    const safeTitle = task.title.replace(/[/\\:*?"<>|]/g, '_').slice(0, 40);
+    const safeLabel = task.episodeLabel.replace(/[/\\:*?"<>|]/g, '_').slice(0, 20);
+    const dirPath = `Download/${safeTitle}/${safeLabel}`;
+    try { await Filesystem.rmdir({ path: dirPath, directory: Directory.Data, recursive: true }); } catch { /* ignore */ }
+    try { await Filesystem.rmdir({ path: dirPath, directory: Directory.Library, recursive: true }); } catch { /* ignore */ }
+  }
 
   // 浏览器环境：清理 IndexedDB 中的片段和播放列表
   if (!isCapacitor()) {

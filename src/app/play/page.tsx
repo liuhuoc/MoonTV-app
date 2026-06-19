@@ -510,6 +510,7 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
           title: dlTask.title,
           source: 'local',
           source_name: '本地文件',
+          poster: dlTask.poster || '',
           episodes: [dlTask.localPath],
           douban_id: 0,
         } as any);
