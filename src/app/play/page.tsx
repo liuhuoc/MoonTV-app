@@ -249,6 +249,8 @@ function PlayPageClient() {
 
   const ensureVideoSource = (video: HTMLVideoElement | null, url: string) => {
     if (!video || !url) return;
+    // 本地视频由自定义 HLS loader 处理，不需要 <source> 元素
+    if (url.startsWith('local://')) return;
     const sources = Array.from(video.getElementsByTagName('source'));
     const existed = sources.some((s) => s.src === url);
     if (!existed) {
@@ -344,6 +346,75 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
         }
         // 执行原始load方法
         load(context, config, callbacks);
+      };
+    }
+  }
+
+  // 本地视频 HLS.js Loader：实现按需加载和正确的 seek 处理
+  class LocalVideoHlsJsLoader extends Hls.DefaultConfig.loader {
+    constructor(config: any) {
+      super(config);
+      const load = this.load.bind(this);
+      this.load = function (context: any, config: any, callbacks: any) {
+        const { type, url } = context;
+        
+        try {
+          // 处理 manifest 请求
+          if (type === 'manifest') {
+            const meta = (window as any).__localVideoMeta;
+            if (!meta) {
+              throw new Error('Local video metadata not found');
+            }
+            
+            const response = {
+              data: meta.m3u8Content,
+              url: url,
+            };
+            
+            callbacks.onSuccess(response, { total: 0 }, context, null);
+            return;
+          }
+          
+          // 处理分段请求
+          if (type === 'fragment') {
+            const match = url.match(/\/__local_video__\/(\d+)/);
+            if (match) {
+              const segIndex = parseInt(match[1]);
+              const meta = (window as any).__localVideoMeta;
+              
+              // 检查缓存
+              if (meta.segmentCache.has(segIndex)) {
+                const blob = meta.segmentCache.get(segIndex);
+                blob.arrayBuffer().then((arrayBuffer: ArrayBuffer) => {
+                  const response = {
+                    data: arrayBuffer,
+                    url: url,
+                  };
+                  callbacks.onSuccess(response, { total: arrayBuffer.byteLength }, context, null);
+                });
+                return;
+              }
+              
+              // 加载分段
+              meta.segmentLoader(segIndex).then((blob: Blob) => {
+                meta.segmentCache.set(segIndex, blob);
+                return blob.arrayBuffer();
+              }).then((arrayBuffer: ArrayBuffer) => {
+                const response = {
+                  data: arrayBuffer,
+                  url: url,
+                };
+                callbacks.onSuccess(response, { total: arrayBuffer.byteLength }, context, null);
+              });
+              return;
+            }
+          }
+          
+          // 其他请求使用默认处理
+          load(context, config, callbacks);
+        } catch (error) {
+          callbacks.onError({ type: 'networkError', details: 'loaderError' }, context, null);
+        }
       };
     }
   }
@@ -518,14 +589,12 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
         try {
           setLoadingMessage('正在准备本地视频...');
 
-          // 优化：按需加载分段，避免一次性加载所有数据
-          const segmentCache = new Map<number, string>();
+          // 读取 M3U8 获取分段信息
           const segmentDurations: number[] = [];
           let playlistContent: string;
           let dirPath: string;
           let writeDirEnum: any;
 
-          // 读取 M3U8 获取分段信息
           if (dlTask.writeDirectory === 'IndexedDB') {
             playlistContent = await browserReadPlaylist(currentId || dlTask.id);
           } else {
@@ -559,19 +628,13 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
             return;
           }
 
-          // 创建按需加载的分段获取函数
-          const loadSegment = async (index: number): Promise<string> => {
-            if (segmentCache.has(index)) {
-              return segmentCache.get(index)!;
-            }
-
-            let blobUrl: string;
+          // 创建按需加载的分段获取函数（返回 Blob）
+          const loadSegmentBlob = async (index: number): Promise<Blob> => {
             const segFileName = `seg_${String(index).padStart(5, '0')}.ts`;
 
             if (dlTask.writeDirectory === 'IndexedDB') {
               const buf = await browserReadSegment(currentId || dlTask.id, index + 1);
-              const blob = new Blob([buf], { type: 'video/mp2t' });
-              blobUrl = URL.createObjectURL(blob);
+              return new Blob([buf], { type: 'video/mp2t' });
             } else {
               const segPath = `${dirPath}/${segFileName}`;
               const segResult = await Filesystem.readFile({ path: segPath, directory: writeDirEnum });
@@ -579,54 +642,34 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
               const bytes = atob(base64);
               const arr = new Uint8Array(bytes.length);
               for (let j = 0; j < bytes.length; j++) arr[j] = bytes.charCodeAt(j);
-              const blob = new Blob([arr], { type: 'video/mp2t' });
-              blobUrl = URL.createObjectURL(blob);
+              return new Blob([arr], { type: 'video/mp2t' });
             }
-
-            segmentCache.set(index, blobUrl);
-            return blobUrl;
           };
 
-          // 预加载前3个分段以加快启动速度
-          setLoadingMessage('正在加载视频数据...');
-          const preloadCount = Math.min(3, segCount);
-          await Promise.all(Array.from({ length: preloadCount }, (_, i) => loadSegment(i)));
+          // 构建 M3U8 内容，使用相对路径（由自定义 loader 拦截处理）
+          const m3u8Lines = [
+            '#EXTM3U',
+            '#EXT-X-VERSION:3',
+            `#EXT-X-TARGETDURATION:${Math.ceil(Math.max(...segmentDurations))}`,
+            '#EXT-X-MEDIA-SEQUENCE:0',
+            '#EXT-X-PLAYLIST-TYPE:VOD',
+          ];
+          for (let i = 0; i < segCount; i++) {
+            m3u8Lines.push(`#EXTINF:${segmentDurations[i].toFixed(3)},`);
+            m3u8Lines.push(`/__local_video__/${i}`);
+          }
+          m3u8Lines.push('#EXT-X-ENDLIST');
+          const m3u8Content = m3u8Lines.join('\n');
 
-          // 构建 M3U8 播放列表，使用 blob URL
-          const buildM3U8 = async () => {
-            const lines = [
-              '#EXTM3U',
-              '#EXT-X-VERSION:3',
-              `#EXT-X-TARGETDURATION:${Math.ceil(Math.max(...segmentDurations))}`,
-              '#EXT-X-MEDIA-SEQUENCE:0',
-              '#EXT-X-PLAYLIST-TYPE:VOD',
-            ];
-            
-            for (let i = 0; i < segCount; i++) {
-              const blobUrl = await loadSegment(i);
-              lines.push(`#EXTINF:${segmentDurations[i].toFixed(3)},`);
-              lines.push(blobUrl);
-            }
-            
-            lines.push('#EXT-X-ENDLIST');
-            return lines.join('\n');
+          // 保存元数据到全局，供自定义 HLS.js loader 使用
+          (window as any).__localVideoMeta = {
+            m3u8Content,
+            segmentLoader: loadSegmentBlob,
+            segmentCache: new Map<number, Blob>(),
           };
 
-          const m3u8Content = await buildM3U8();
-          const m3u8Blob = new Blob([m3u8Content], { type: 'application/vnd.apple.mpegurl' });
-          const m3u8Url = URL.createObjectURL(m3u8Blob);
-          
-          // 保存清理函数
-          const cleanup = () => {
-            segmentCache.forEach(url => URL.revokeObjectURL(url));
-            URL.revokeObjectURL(m3u8Url);
-          };
-          
-          setVideoUrl(m3u8Url);
-          
-          // 保存清理函数到 ref
-          (window as any).__localVideoCleanup = cleanup;
-          
+          // 使用虚拟 URL，由自定义 loader 处理
+          setVideoUrl('local://playlist.m3u8');
           setLoading(false);
         } catch (e) {
           setError(`读取本地视频失败: ${(e as Error).message}`);
@@ -1305,7 +1348,7 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
         moreVideoAttr: {
           crossOrigin: 'anonymous',
         },
-        // HLS 支持配置 - 仅用于远程播放
+        // HLS 支持配置
         customType: {
           m3u8: function (video: HTMLVideoElement, url: string) {
               if (!Hls) {
@@ -1319,9 +1362,15 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
 
               let hls: Hls;
               try {
-                const customLoader = blockAdEnabledRef.current
-                  ? CustomHlsJsLoader
-                  : Hls.DefaultConfig.loader;
+                // 本地视频使用自定义 loader，远程视频根据广告过滤设置选择 loader
+                let loaderClass: any;
+                if (url.startsWith('local://')) {
+                  loaderClass = LocalVideoHlsJsLoader;
+                } else if (blockAdEnabledRef.current) {
+                  loaderClass = CustomHlsJsLoader;
+                } else {
+                  loaderClass = Hls.DefaultConfig.loader;
+                }
 
                 const hlsConfig: any = {
                   debug: false,
@@ -1335,7 +1384,7 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
                   maxBufferSize: 60 * 1000 * 1000,
 
                   /* 自定义loader */
-                  loader: customLoader,
+                  loader: loaderClass,
                 };
 
                 hls = new Hls(hlsConfig);
