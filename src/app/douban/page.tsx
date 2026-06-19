@@ -9,7 +9,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { getDoubanCategories } from '@/lib/douban.client';
 import { DoubanItem } from '@/lib/types';
-import { addGlobalDebugLog } from '@/lib/debug-log';
 
 import DoubanCardSkeleton from '@/components/DoubanCardSkeleton';
 import DoubanSelector from '@/components/DoubanSelector';
@@ -168,7 +167,6 @@ function DoubanPageClient() {
   const loadInitialData = useCallback(async (requestVersion: number) => {
     try {
       setLoading(true);
-      addGlobalDebugLog(`分类: loadInitialData type=${type} isMovieTimeCursor=${isMovieTimeCursorMode} v=${requestVersion}`);
       if (isMovieTimeCursorMode) {
         const { collected, nextYear, nextStart, exhausted } =
           await fetchMovieTimeSortedPage(true);
@@ -178,7 +176,6 @@ function DoubanPageClient() {
         timeCursorStartRef.current = nextStart;
         timeCursorExhaustedRef.current = exhausted;
         setHasMore(!exhausted && collected.length > 0);
-        addGlobalDebugLog(`分类: 时间游标完成 count=${collected.length} exhausted=${exhausted}`);
         setLoading(false);
         return;
       }
@@ -187,19 +184,16 @@ function DoubanPageClient() {
       if (requestVersionRef.current !== requestVersion) return;
 
       if (data.code === 200) {
-        addGlobalDebugLog(`分类: 请求成功 count=${data.list.length} hasMore=${data.list.length === pageSize}`);
         setDoubanData(data.list);
         setHasMore(
           (type === 'movie' || type === 'animation') ? data.list.length > 0 : data.list.length === pageSize
         );
         setLoading(false);
       } else {
-        addGlobalDebugLog(`分类: 请求失败 code=${data.code} msg=${data.message}`);
         throw new Error(data.message || '获取数据失败');
       }
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : typeof err === 'string' ? err : JSON.stringify(err);
-      addGlobalDebugLog(`分类: 异常 ${errMsg.substring(0, 80)}`);
       console.error('分类加载失败:', errMsg, err);
       if (requestVersionRef.current !== requestVersion) return;
       setDoubanData([]);

@@ -1,6 +1,5 @@
 import { DoubanItem, DoubanResult } from './types';
 import { nativeFetch } from './capacitor-http';
-import { addGlobalDebugLog } from './debug-log';
 
 /**
  * CORS 代理列表（按优先级）
@@ -342,13 +341,11 @@ export async function getDoubanCategories(
   if (pageStart === 0) {
     const cached = readCache(cacheKey);
     if (cached) {
-      addGlobalDebugLog(`豆瓣API: localStorage缓存命中 ${params.kind}/${params.category}/${params.type} count=${cached.list.length}`);
       return cached;
     }
   }
 
   try {
-    addGlobalDebugLog(`豆瓣API: 请求 ${params.kind}/${params.category}/${params.type} pageStart=${pageStart}`);
     // Capacitor 原生环境：通过 CapacitorHttp 直连（绕过 CORS）
     // 浏览器环境：nativeFetch 内部回退到原生 fetch
     // 失败时回退到 CORS 代理
@@ -373,7 +370,6 @@ export async function getDoubanCategories(
     }
 
     const responseJson = await response.json();
-    addGlobalDebugLog(`豆瓣API: ${params.kind}/${params.category}/${params.type} 响应 OK`);
 
     let list: DoubanItem[];
     if (isMovieSubjectCollection) {
@@ -400,7 +396,6 @@ export async function getDoubanCategories(
       if (!Array.isArray(dataArray)) {
         if (doubanData?.r !== undefined && doubanData?.msg) {
           // 被限流了，等 1~2 秒重试一次
-          addGlobalDebugLog(`豆瓣API: ${params.kind}/${params.category}/${params.type} 被限流，1.5s后重试...`);
           await new Promise(r => setTimeout(r, 1500));
           const retryResp = await nativeFetch(target, {
             headers: {
@@ -414,7 +409,6 @@ export async function getDoubanCategories(
             const retryJson = await retryResp.json() as any;
             const retryData = retryJson?.data;
             if (Array.isArray(retryData)) {
-              addGlobalDebugLog(`豆瓣API: ${params.kind}/${params.category}/${params.type} 重试成功 count=${retryData.length}`);
               list = retryData.slice(0, pageLimit).map((item: any) => ({
                 id: item.id,
                 title: item.title,
@@ -440,7 +434,6 @@ export async function getDoubanCategories(
           list = [];
         }
       } else {
-        addGlobalDebugLog(`豆瓣API: ${params.kind}/${params.category}/${params.type} 解析 data.length=${dataArray.length}`);
         list = dataArray.slice(0, pageLimit).map((item: any) => ({
           id: item.id,
           title: item.title,
@@ -474,7 +467,6 @@ export async function getDoubanCategories(
     return result;
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : typeof error === 'string' ? error : JSON.stringify(error);
-    addGlobalDebugLog(`豆瓣API: ${params.kind}/${params.category}/${params.type} 失败 ${errMsg.substring(0, 80)}`);
     throw new Error(`获取豆瓣分类数据失败: ${errMsg}`);
   }
 }

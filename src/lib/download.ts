@@ -155,10 +155,9 @@ export async function deleteDownloadTask(id: string): Promise<void> {
 export function pauseDownload(taskId: string): void {
   const ctrl = activeAbortControllers.get(taskId);
   if (ctrl) {
-    try { ctrl.abort(); } catch { /* ignore */ }
+    ctrl.abort();
     activeAbortControllers.delete(taskId);
   }
-  // 同步设置 paused 状态，后续 catch 块会检查此状态避免覆盖
   updateDownloadTask(taskId, { status: 'paused' });
 }
 

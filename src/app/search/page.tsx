@@ -12,7 +12,7 @@ import {
   getSearchHistory,
   subscribeToDataUpdates,
 } from '@/lib/db.client';
-import { searchFromApi, type ApiSite } from '@/lib/downstream';
+import { searchFromApi } from '@/lib/downstream';
 import type { SearchResult } from '@/lib/types';
 import { getAvailableApiSites } from '@/lib/config';
 import { processImageUrl } from '@/lib/utils';
@@ -25,7 +25,6 @@ function ResultRow({ item, query, onClick }: { item: SearchResult; query: string
   const year = item.year && item.year !== 'unknown' ? item.year : '';
   const typeName = item.type_name || '';
   const epCount = item.episodes?.length || 0;
-  const sourceName = item.source_name || '';
   const desc = item.desc || '';
   const truncatedDesc = desc.length > 80 ? desc.slice(0, 80) + '...' : desc;
 
@@ -107,7 +106,7 @@ function SearchPageClient() {
       arr.push(item);
       map.set(name, arr);
     });
-    return sourceOrder.filter(name => map.has(name)).map(name => [name, map.get(name)!] as [string, any[]]);
+    return sourceOrder.filter(name => map.has(name)).map(name => [name, map.get(name) ?? []] as [string, any[]]);
   }, [searchResults, sourceOrder]);
 
   // 当前选中源的结果

@@ -151,6 +151,7 @@ export default function SettingsPage() {
       return bEnabled - aEnabled;
     });
     setAllSources(sortedMerged);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const saveToStorage = (key: string, value: string) => {

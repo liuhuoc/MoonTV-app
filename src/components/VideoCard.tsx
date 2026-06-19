@@ -320,11 +320,9 @@ export default function VideoCard({
             referrerPolicy="origin"
             className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 ease-out group-hover:scale-105"
             onLoad={() => {
-              console.log('[VideoCard] 图片加载成功:', processImageUrl(actualPoster).substring(0, 80));
               setIsLoading(true);
             }}
             onError={() => {
-              console.error('[VideoCard] 图片加载失败:', processImageUrl(actualPoster).substring(0, 80), 'title:', actualTitle?.substring(0, 20));
               setHasError(true);
               setIsLoading(true);
             }}

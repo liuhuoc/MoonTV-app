@@ -31,7 +31,6 @@ import {
 import { fetchVideoDetail, downstreamSearchFast } from '@/lib/downstream';
 import { SearchResult } from '@/lib/types';
 import { processImageUrl } from '@/lib/utils';
-import { addGlobalDebugLog } from '@/lib/debug-log';
 import { addDownloadTask, getDownloadTasks, startDownload, subscribeToDownloadUpdates, type DownloadTask } from '@/lib/download';
 import Swal from 'sweetalert2';
 
@@ -175,7 +174,7 @@ function PlayPageClient() {
   );
 
   // 保存优选时的测速结果，避免EpisodeSelector重复测速
-  const [precomputedVideoInfo, setPrecomputedVideoInfo] = useState<
+  const [precomputedVideoInfo] = useState<
     Map<string, { quality: string; loadSpeed: string; pingTime: number }>
   >(new Map());
 
@@ -714,8 +713,6 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
             browserReadSegment,
             totalDuration,
           };
-          addGlobalDebugLog(`localInit: __localVideoCtx set, preloadCache=${preloadCache.size} segments, m3u8=${m3u8Content.length} chars`);
-
           // 创建 M3U8 blob URL
           const m3u8Blob = new Blob([m3u8Content], { type: 'application/vnd.apple.mpegurl' });
           const blobUrl = URL.createObjectURL(m3u8Blob);
@@ -1406,7 +1403,6 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
         customType: {
           m3u8: function (video: HTMLVideoElement, url: string) {
               if (!Hls) {
-                addGlobalDebugLog('customType: HLS.js not loaded');
                 return;
               }
 
