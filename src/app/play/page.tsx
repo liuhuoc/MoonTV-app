@@ -532,136 +532,7 @@ function PlayPageClient() {
     return `${minutes}分${remainingSeconds.toString().padStart(2, '0')}秒`;
   };
 
-// 创建本地分段 Loader：拦截 local://segment/N URL，从磁盘读取文件
-// 从 window.__localPlaybackCtx 读取上下文（window 是真正全局的，不会被任何机制重置）
-function createLocalSegmentLoader() {
-  class LocalSegmentLoader {
-    private aborted = false;
-    context: any = null;
-    stats: any = { aborted: false, loaded: 0, total: 0, retry: 0, chunkCount: 0, bwEstimate: 0,
-      loading: { start: 0, first: 0, end: 0 }, parsing: { start: 0, end: 0 }, buffering: { start: 0, first: 0, end: 0 } };
-
-    // eslint-disable-next-line @typescript-eslint/no-empty-function, @typescript-eslint/no-unused-vars
-    constructor(_config: any) {
-      this.context = null;
-      console.log('[LocalLoader] 实例化');
-    }
-
-    // eslint-disable-next-line @typescript-eslint/no-empty-function
-    destroy() {}
-    abort() {
-      this.aborted = true;
-    }
-
-    load(context: any, _config: any, callbacks: any) {
-      const url: string = context.url || '';
-      console.log(`[LocalLoader] load() url=${url}`);
-
-      if (url.startsWith('local://segment/')) {
-        // 从 window 上读取上下文（真正全局，不受 React 生命周期影响）
-        const ctx = window.__localPlaybackCtx;
-        if (!ctx) {
-          console.error('[LocalLoader] window.__localPlaybackCtx 未设置');
-          callbacks.onError({ code: 500, text: '本地播放上下文未设置' }, context, null);
-          return;
-        }
-
-        const segIdx = url.replace('local://segment/', '');
-        const segNum = parseInt(segIdx, 10);
-
-        // 浏览器端：从 IndexedDB 读取
-        if (ctx.platform === 'browser') {
-          const segIndex = segNum + 1; // IndexedDB key 是 1-based
-          console.log(`[LocalLoader] 读浏览器片段: ${segNum} (key=${segIndex})`);
-          browserReadSegment(ctx.taskId, segIndex)
-            .then((buf: ArrayBuffer) => {
-              console.log(`[LocalLoader] 片段 ${segNum} 读取成功: ${buf.byteLength} bytes`);
-              const stats = {
-                aborted: false, loaded: buf.byteLength, total: buf.byteLength, retry: 0, chunkCount: 1,
-                bwEstimate: 0, loading: { start: performance.now(), first: performance.now(), end: performance.now() },
-                parsing: { start: 0, end: 0 }, buffering: { start: 0, first: 0, end: 0 },
-                ...(context.stats || {}),
-              };
-              callbacks.onSuccess({ url, data: buf }, stats, context, null);
-            })
-            .catch((err: any) => {
-              console.error(`[LocalLoader] 浏览器片段 ${segNum} 读取失败: ${(err as Error).message || JSON.stringify(err)}`);
-              callbacks.onError({ code: 404, text: (err as Error).message || '读取失败' }, context, null);
-            });
-          return;
-        }
-
-        // Capacitor 端：从 Filesystem 读取
-        const segFileName = `seg_${String(segNum).padStart(5, '0')}.ts`;
-        const segPath = `${ctx.dirPath}/${segFileName}`;
-        console.log(`[LocalLoader] 读片段: ${segFileName} (path=${segPath})`);
-
-        Filesystem.readFile({ path: segPath, directory: ctx.writeDirEnum as any })
-          .then((result: any) => {
-            const base64 = result.data as string;
-            const bytes = atob(base64);
-            const arr = new Uint8Array(bytes.length);
-            for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
-            console.log(`[LocalLoader] 片段 ${segNum} 读取成功: ${arr.length} bytes`);
-            // 创建独立的 ArrayBuffer 副本，避免 byteOffset 问题导致 HLS.js 解析失败
-            const ab = new ArrayBuffer(arr.length);
-            new Uint8Array(ab).set(arr);
-            const stats = {
-              aborted: false, loaded: arr.length, total: arr.length, retry: 0, chunkCount: 1,
-              bwEstimate: 0, loading: { start: performance.now(), first: performance.now(), end: performance.now() },
-              parsing: { start: 0, end: 0 }, buffering: { start: 0, first: 0, end: 0 },
-              ...(context.stats || {}),
-            };
-            console.log(`[LocalLoader] 调用 onSuccess, data.byteLength=${ab.byteLength}, stats.loaded=${stats.loaded}`);
-            callbacks.onSuccess({ url, data: ab }, stats, context, null);
-            console.log(`[LocalLoader] onSuccess 调用完成`);
-          })
-          .catch((err: any) => {
-            console.error(`[LocalLoader] 片段 ${segNum} 读取失败: ${(err as Error).message || JSON.stringify(err)}`);
-            callbacks.onError({ code: 404, text: (err as Error).message || '读取失败' }, context, null);
-          });
-      } else if (url.startsWith('data:')) {
-        // data: URI（Android WebView 中用 data: 替代 blob URL）直接解码
-        const base64Content = url.replace(/^data:[^;]*;base64,/, '');
-        const text = atob(base64Content);
-        console.log(`[LocalLoader] data: URI 解码成功: ${text.length} chars`);
-        const stats = {
-          aborted: false, loaded: text.length, total: text.length, retry: 0, chunkCount: 1,
-          bwEstimate: 0, loading: { start: performance.now(), first: performance.now(), end: performance.now() },
-          parsing: { start: 0, end: 0 }, buffering: { start: 0, first: 0, end: 0 },
-          ...(context.stats || {}),
-        };
-        callbacks.onSuccess({ url, data: text }, stats, context, null);
-      } else {
-        // 非 local:// 且非 data: 的 URL，使用 fetch 加载
-        console.log(`[LocalLoader] fetch: ${url.substring(0, 80)}...`);
-        fetch(url, { headers: context.headers as Record<string, string> | undefined } as any)
-          .then((resp: any) => {
-            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-            console.log(`[LocalLoader] fetch 成功: ${resp.status}, 开始读body`);
-            return resp.arrayBuffer();
-          })
-          .then((data: ArrayBuffer) => {
-            console.log(`[LocalLoader] fetch body: ${data.byteLength} bytes`);
-            const stats = {
-              aborted: false, loaded: data.byteLength, total: data.byteLength, retry: 0, chunkCount: 1,
-              bwEstimate: 0, loading: { start: performance.now(), first: performance.now(), end: performance.now() },
-              parsing: { start: 0, end: 0 }, buffering: { start: 0, first: 0, end: 0 },
-              ...(context.stats || {}),
-            };
-            callbacks.onSuccess({ url, data }, stats, context, null);
-          })
-          .catch((err: any) => {
-            console.error(`[LocalLoader] fetch 失败: ${(err as Error).message || JSON.stringify(err)}`);
-            callbacks.onError({ code: 0, text: (err as Error).message || 'fetch失败' }, context, null);
-          });
-      }
-    }
-  }
-
-  return LocalSegmentLoader;
-}
-
+// 自定义 HLS.js Loader：用于远程播放时过滤广告
 class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
     constructor(config: any) {
       super(config);
@@ -1602,7 +1473,8 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
       artPlayerRef.current = new Artplayer({
         container: artRef.current,
         url: videoUrl,
-        ...(isLocalPlayback ? { type: 'm3u8' } : {}),
+        // 本地播放使用 blob URL,不需要指定 type,让 Artplayer 直接播放
+        // 远程播放才需要 customType 处理 m3u8
         poster: videoCover,
         volume: 0.7,
         isLive: false,
@@ -1634,7 +1506,7 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
         moreVideoAttr: {
           crossOrigin: 'anonymous',
         },
-        // HLS 支持配置
+        // HLS 支持配置 - 仅用于远程播放
         customType: {
           m3u8: function (video: HTMLVideoElement, url: string) {
               if (!Hls) {
@@ -1642,7 +1514,7 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
                 return;
               }
 
-              console.log(`[customType.m3u8] 被调用\n  url: ${url}\n  本地播放: ${isLocalPlayback}`);
+              console.log(`[customType.m3u8] 被调用\n  url: ${url.substring(0, 100)}...`);
 
               if (video.hls) {
                 video.hls.destroy();
@@ -1651,17 +1523,15 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
               console.log('[customType] 创建HLS实例...');
               let hls: Hls;
               try {
-                const customLoader = isLocalPlayback
-                  ? createLocalSegmentLoader()
-                  : blockAdEnabledRef.current
+                const customLoader = blockAdEnabledRef.current
                   ? CustomHlsJsLoader
                   : Hls.DefaultConfig.loader;
 
                 const hlsConfig: any = {
                   debug: false,
-                  enableWorker: !isLocalPlayback,
-                  lowLatencyMode: false, // 本地播放不需要低延迟模式
-                  autoStartLoad: true, // 让 HLS.js 自动管理加载时机
+                  enableWorker: true,
+                  lowLatencyMode: false,
+                  autoStartLoad: true,
 
                   /* 缓冲/内存相关 */
                   maxBufferLength: 30,
@@ -1671,12 +1541,6 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
                   /* 自定义loader */
                   loader: customLoader,
                 };
-
-                // 本地播放时显式设置 fLoader/pLoader，确保片段也被 LocalLoader 拦截
-                if (isLocalPlayback) {
-                  hlsConfig.fLoader = customLoader;
-                  hlsConfig.pLoader = customLoader;
-                }
 
                 hls = new Hls(hlsConfig);
                 console.log('[customType] HLS实例创建成功');
@@ -1701,36 +1565,16 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
                 hls.attachMedia(video);
                 console.log('[customType] attachMedia 完成');
 
-                // 本地播放：先等 MEDIA_ATTACHED，再 loadSource
-                if (isLocalPlayback) {
-                  console.log('[customType] 本地播放：等待 MEDIA_ATTACHED 后再 loadSource');
-                  hls.on(Hls.Events.MEDIA_ATTACHED, () => {
-                    console.log('[HLS] MEDIA_ATTACHED，现在调用 loadSource');
-                    hls.loadSource(url);
-                    console.log('[customType] loadSource 成功');
-                    // autoStartLoad: true 会自动开始加载
-                    video.play().then(() => {
-                      console.log('[HLS] video.play() resolve');
-                    }).catch((e: any) => {
-                      console.warn(`[HLS] video.play() reject: ${e?.message || e}`);
-                    });
-                  });
-                } else {
-                  // 远程播放：直接 loadSource
-                  console.log('[customType] 调用 loadSource...');
-                  hls.loadSource(url);
-                  console.log('[customType] loadSource 成功');
-                }
+                console.log('[customType] 调用 loadSource...');
+                hls.loadSource(url);
+                console.log('[customType] loadSource 成功');
               } catch (e) {
                 console.error(`[customType] loadSource/attachMedia 失败: ${(e as Error).message}`);
                 return;
               }
               video.hls = hls;
 
-              // 本地播放时不要添加 <source> 元素，避免干扰 HLS.js 的 MediaSource
-              if (!isLocalPlayback) {
-                ensureVideoSource(video, url);
-              }
+              ensureVideoSource(video, url);
 
               hls.on(Hls.Events.ERROR, function (event: any, data: any) {
                 // bufferFullError 是非致命错误，不需要处理
