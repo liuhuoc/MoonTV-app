@@ -31,6 +31,7 @@ import {
 import { fetchVideoDetail, downstreamSearchFast } from '@/lib/downstream';
 import { SearchResult } from '@/lib/types';
 import { processImageUrl } from '@/lib/utils';
+import { addGlobalDebugLog } from '@/lib/debug-log';
 import { addDownloadTask, getDownloadTasks, startDownload, subscribeToDownloadUpdates, type DownloadTask } from '@/lib/download';
 import Swal from 'sweetalert2';
 
@@ -157,15 +158,6 @@ function PlayPageClient() {
   // 视频播放地址
   const [videoUrl, setVideoUrl] = useState('');
   const [isLocalPlayback, setIsLocalPlayback] = useState(false);
-
-  // 调试控制台
-  const [showDebug, setShowDebug] = useState(false);
-  const [debugLogs, setDebugLogs] = useState<string[]>([]);
-  const addDebugLog = (msg: string) => {
-    const ts = new Date().toISOString().slice(11, 23);
-    console.log(`[MoonTV] ${msg}`);
-    setDebugLogs(prev => [...prev.slice(-199), `${ts} ${msg}`]);
-  };
 
   // 总集数
   const totalEpisodes = detail?.episodes?.length || 0;
@@ -722,7 +714,7 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
             browserReadSegment,
             totalDuration,
           };
-          addDebugLog(`localInit: __localVideoCtx set, preloadCache=${preloadCache.size} segments, m3u8=${m3u8Content.length} chars`);
+          addGlobalDebugLog(`localInit: __localVideoCtx set, preloadCache=${preloadCache.size} segments, m3u8=${m3u8Content.length} chars`);
 
           // 创建 M3U8 blob URL
           const m3u8Blob = new Blob([m3u8Content], { type: 'application/vnd.apple.mpegurl' });
@@ -1414,7 +1406,7 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
         customType: {
           m3u8: function (video: HTMLVideoElement, url: string) {
               if (!Hls) {
-                addDebugLog('customType: HLS.js not loaded');
+                addGlobalDebugLog('customType: HLS.js not loaded');
                 return;
               }
 
@@ -2584,41 +2576,7 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
         );
       })()}
 
-      {/* 调试控制台按钮 */}
-      <button
-        onClick={() => setShowDebug(!showDebug)}
-        className='fixed bottom-4 right-4 z-[9999] w-10 h-10 rounded-full bg-gray-800/80 text-green-400 text-xs font-mono flex items-center justify-center shadow-lg border border-gray-600 hover:bg-gray-700 transition-colors'
-        title='调试控制台'
-      >
-        {showDebug ? '✕' : 'DBG'}
-      </button>
-
-      {/* 调试控制台 */}
-      {showDebug && (
-        <div className='fixed bottom-16 right-4 z-[9998] w-96 max-h-96 bg-gray-900/95 border border-gray-600 rounded-xl shadow-2xl flex flex-col overflow-hidden'>
-          <div className='flex items-center justify-between px-3 py-2 bg-gray-800 border-b border-gray-700'>
-            <span className='text-xs font-mono text-green-400'>Debug Console</span>
-            <button
-              onClick={() => setDebugLogs([])}
-              className='text-xs text-gray-400 hover:text-white px-2 py-0.5 rounded'
-            >
-              清空
-            </button>
-          </div>
-          <div className='flex-1 overflow-y-auto p-2 font-mono text-xs leading-relaxed'>
-            {debugLogs.length === 0 ? (
-              <span className='text-gray-500'>等待日志...</span>
-            ) : (
-              debugLogs.map((log, i) => (
-                <div key={i} className='text-green-300 break-all py-0.5'>
-                  {log}
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      )}
-    </PageLayout>
+      </PageLayout>
   );
 }
 

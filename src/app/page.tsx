@@ -9,6 +9,7 @@ import { Suspense, useEffect, useRef, useState } from 'react';
 
 import { getDoubanCategories } from '@/lib/douban.client';
 import { DoubanItem } from '@/lib/types';
+import { addGlobalDebugLog } from '@/lib/debug-log';
 
 import ContinueWatching from '@/components/ContinueWatching';
 import PageLayout from '@/components/PageLayout';
@@ -51,6 +52,7 @@ function HomeClient() {
       try {
         // 先检查模块级缓存（同一次 app 启动内有效）
         if (__categoryCache && Date.now() - __categoryCache.time < getCacheTTL()) {
+          addGlobalDebugLog(`首页: 命中模块缓存, age=${Math.round((Date.now() - __categoryCache.time) / 1000)}s`);
           setHotMovies(__categoryCache.movies);
           setHotTvShows(__categoryCache.tv);
           setHotVarietyShows(__categoryCache.variety);
@@ -60,6 +62,7 @@ function HomeClient() {
         }
 
         setLoading(true);
+        addGlobalDebugLog('首页: 开始请求豆瓣数据...');
 
         const results = await Promise.allSettled([
           getDoubanCategories({ kind: 'movie', category: '热门', type: '全部' }),
@@ -69,6 +72,15 @@ function HomeClient() {
         ]);
 
         const [moviesResult, tvResult, varietyResult, animationResult] = results;
+
+        const labels = ['热门电影', '热门剧集', '热门综艺', '热门动漫'];
+        const resultsList = [moviesResult, tvResult, varietyResult, animationResult];
+        resultsList.forEach((r, i) => {
+          const status = r.status === 'fulfilled' ? 'OK' : 'FAIL';
+          const count = r.status === 'fulfilled' && r.value.code === 200 ? r.value.list.length : 0;
+          const err = r.status === 'rejected' ? String(r.reason).substring(0, 60) : (r.value.code !== 200 ? r.value.message : '');
+          addGlobalDebugLog(`首页: ${labels[i]} ${status} count=${count}${err ? ` err=${err}` : ''}`);
+        });
 
         if (moviesResult.status === 'fulfilled' && moviesResult.value.code === 200) {
           setHotMovies(moviesResult.value.list);
@@ -91,6 +103,7 @@ function HomeClient() {
           time: Date.now(),
         };
       } catch (error) {
+        addGlobalDebugLog(`首页: 请求异常 ${String(error).substring(0, 80)}`);
         console.error('获取豆瓣数据失败:', error);
       } finally {
         setLoading(false);

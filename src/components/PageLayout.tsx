@@ -1,4 +1,5 @@
 import { BackButton } from './BackButton';
+import DebugConsole from './DebugConsole';
 import MobileBottomNav from './MobileBottomNav';
 import MobileHeader from './MobileHeader';
 import Sidebar from './Sidebar';
@@ -52,6 +53,9 @@ const PageLayout = ({ children, activePath = '/' }: PageLayoutProps) => {
       <div className='md:hidden'>
         <MobileBottomNav activePath={activePath} />
       </div>
+
+      {/* 全局调试控制台 */}
+      <DebugConsole />
     </div>
   );
 };

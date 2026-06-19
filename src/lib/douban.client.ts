@@ -1,5 +1,6 @@
 import { DoubanItem, DoubanResult } from './types';
 import { nativeFetch } from './capacitor-http';
+import { addGlobalDebugLog } from './debug-log';
 
 /**
  * CORS 代理列表（按优先级）
@@ -341,11 +342,13 @@ export async function getDoubanCategories(
   if (pageStart === 0) {
     const cached = readCache(cacheKey);
     if (cached) {
+      addGlobalDebugLog(`豆瓣API: localStorage缓存命中 ${params.kind}/${params.category}/${params.type} count=${cached.list.length}`);
       return cached;
     }
   }
 
   try {
+    addGlobalDebugLog(`豆瓣API: 请求 ${params.kind}/${params.category}/${params.type} pageStart=${pageStart}`);
     // Capacitor 原生环境：通过 CapacitorHttp 直连（绕过 CORS）
     // 浏览器环境：nativeFetch 内部回退到原生 fetch
     // 失败时回退到 CORS 代理
@@ -370,6 +373,7 @@ export async function getDoubanCategories(
     }
 
     const responseJson = await response.json();
+    addGlobalDebugLog(`豆瓣API: ${params.kind}/${params.category}/${params.type} 响应 OK`);
 
     let list: DoubanItem[];
     if (isMovieSubjectCollection) {
@@ -431,6 +435,7 @@ export async function getDoubanCategories(
     return result;
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : typeof error === 'string' ? error : JSON.stringify(error);
+    addGlobalDebugLog(`豆瓣API: ${params.kind}/${params.category}/${params.type} 失败 ${errMsg.substring(0, 80)}`);
     throw new Error(`获取豆瓣分类数据失败: ${errMsg}`);
   }
 }
