@@ -354,7 +354,17 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
     private stats: any;
 
     constructor() {
-      this.stats = { aborted: false };
+      this.stats = {
+        aborted: false,
+        loaded: 0,
+        total: 0,
+        retry: 0,
+        chunkCount: 0,
+        bwEstimate: 0,
+        loading: { start: 0, first: 0, end: 0 },
+        parsing: { start: 0, end: 0 },
+        buffering: { start: 0, first: 0, end: 0 },
+      };
     }
 
     load(context: any, config: any, callbacks: any) {
@@ -383,9 +393,14 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
         } else {
           // manifest / level 加载：直接返回 M3U8 内容
           addDebugLog(`LocalVideoLoader: manifest request, m3u8 length=${ctx.m3u8Content.length}`);
+          this.stats.loading.start = performance.now();
+          this.stats.loading.first = performance.now();
+          this.stats.loading.end = performance.now();
+          this.stats.loaded = ctx.m3u8Content.length;
+          this.stats.total = ctx.m3u8Content.length;
           callbacks.onSuccess(
             { url: context.url, data: ctx.m3u8Content },
-            { total: ctx.m3u8Content.length, loaded: ctx.m3u8Content.length, retry: 0, chunks: [] },
+            this.stats,
             context
           );
         }
@@ -400,9 +415,14 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
         if (ctx.segmentCache.has(segIndex)) {
           const data = ctx.segmentCache.get(segIndex);
           addDebugLog(`LocalVideoLoader: segment ${segIndex} from cache, size=${data.byteLength}`);
+          this.stats.loading.start = performance.now();
+          this.stats.loading.first = performance.now();
+          this.stats.loading.end = performance.now();
+          this.stats.loaded = data.byteLength;
+          this.stats.total = data.byteLength;
           callbacks.onSuccess(
             { url: context.url, data },
-            { total: data.byteLength, loaded: data.byteLength, retry: 0, chunks: [] },
+            this.stats,
             context
           );
           return;
@@ -428,10 +448,15 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
 
         ctx.segmentCache.set(segIndex, arrayBuffer);
         addDebugLog(`LocalVideoLoader: segment ${segIndex} loaded, size=${arrayBuffer.byteLength}`);
+        this.stats.loading.start = performance.now();
+        this.stats.loading.first = performance.now();
+        this.stats.loading.end = performance.now();
+        this.stats.loaded = arrayBuffer.byteLength;
+        this.stats.total = arrayBuffer.byteLength;
 
         callbacks.onSuccess(
           { url: context.url, data: arrayBuffer },
-          { total: arrayBuffer.byteLength, loaded: arrayBuffer.byteLength, retry: 0, chunks: [] },
+          this.stats,
           context
         );
       } catch (e) {
