@@ -399,9 +399,21 @@ export async function getDoubanCategories(
       // 豆瓣 API 响应格式可能变化，记录实际结构以便调试
       if (!Array.isArray(dataArray)) {
         const keys = Object.keys(responseJson || {}).join(', ');
-        addGlobalDebugLog(`豆瓣API: ${params.kind}/${params.category}/${params.type} 响应格式异常 keys=[${keys}] typeof.data=${typeof dataArray}`);
-        // 尝试兼容：如果 data 不存在，可能直接返回数组
-        if (Array.isArray(responseJson)) {
+        const rValue = doubanData?.r;
+        const rType = typeof rValue;
+        const rIsArray = Array.isArray(rValue);
+        const rLen = rIsArray ? rValue.length : (typeof rValue === 'object' && rValue !== null ? Object.keys(rValue).join(',') : String(rValue).substring(0, 100));
+        addGlobalDebugLog(`豆瓣API: ${params.kind}/${params.category}/${params.type} keys=[${keys}] r.type=${rType} r.isArray=${rIsArray} r.len=${rLen}`);
+        // 尝试兼容各种格式
+        if (rIsArray) {
+          list = rValue.slice(0, pageLimit).map((item: any) => ({
+            id: item.id,
+            title: item.title,
+            poster: item.cover || item.pic?.normal || item.pic?.large || '',
+            rate: item.rate,
+            year: year && year !== '全部' ? year : '',
+          }));
+        } else if (Array.isArray(responseJson)) {
           list = responseJson.slice(0, pageLimit).map((item: any) => ({
             id: item.id,
             title: item.title,
