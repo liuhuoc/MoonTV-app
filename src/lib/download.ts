@@ -248,30 +248,6 @@ function parseM3u8SegmentsWithDurations(m3u8Content: string, baseUrl: string): {
   return result;
 }
 
-/** 解析 m3u8 播放列表，提取所有媒体片段 URL */
-function parseM3u8Segments(m3u8Content: string, baseUrl: string): string[] {
-  const lines = m3u8Content.split('\n');
-  const segments: string[] = [];
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) continue;
-    // 匹配常见片段格式：.ts, .m4s, .mp4, .aac, .cmfv, .cmfa
-    if (
-      trimmed.endsWith('.ts') ||
-      trimmed.endsWith('.m4s') ||
-      trimmed.endsWith('.mp4') ||
-      trimmed.endsWith('.aac') ||
-      trimmed.endsWith('.cmfv') ||
-      trimmed.endsWith('.cmfa') ||
-      trimmed.includes('.ts?') ||
-      trimmed.includes('.m4s?')
-    ) {
-      segments.push(resolveUrl(trimmed, baseUrl));
-    }
-  }
-  return segments;
-}
-
 /** 解析相对 URL 为绝对 URL */
 function resolveUrl(url: string, baseUrl: string): string {
   try {

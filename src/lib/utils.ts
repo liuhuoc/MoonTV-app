@@ -65,12 +65,7 @@ export function processImageUrl(originalUrl: string): string {
     return originalUrl;
   }
 
-  let url = originalUrl;
-
-  // 豆瓣 CDN 图片修正：.jpg 后缀实际是 webp 格式
-  if (url.includes('doubanio.com') && /\.jpg(\?|$)/i.test(url)) {
-    url = url.replace(/\.jpg(\?|$)/i, '.webp$1');
-  }
+  const url = originalUrl;
 
   const proxyUrl = getImageProxyUrl();
   if (proxyUrl) {

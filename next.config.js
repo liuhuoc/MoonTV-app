@@ -83,7 +83,7 @@ const withPWA = require('next-pwa')({
   skipWaiting: true,
   runtimeCaching: [
     {
-      // 缓存封面图片（doubanio.com、img9.doubanio.com 等外部图片源）
+      // 缓存所有图片（通过扩展名匹配）
       urlPattern: /\.(?:png|jpg|jpeg|webp|gif|svg)(\?.*)?$/i,
       handler: 'CacheFirst',
       options: {
@@ -92,20 +92,13 @@ const withPWA = require('next-pwa')({
           maxEntries: 500,
           maxAgeSeconds: 30 * 24 * 60 * 60, // 30 天
         },
-        matchOptions: {
-          ignoreVary: true,
-        },
       },
     },
     {
-      // 缓存视频封面图（匹配常见的图片 CDN 域名）
+      // 缓存常见图片 CDN 域名（兜底无扩展名的图片 URL）
       urlPattern: ({ url }) => {
         const imageDomains = [
           'doubanio.com',
-          'img9.doubanio.com',
-          'img1.doubanio.com',
-          'img2.doubanio.com',
-          'img3.doubanio.com',
           'pic2.iqiyipic.com',
           'pic2.qiyipic.com',
           'pic3.iqiyipic.com',
