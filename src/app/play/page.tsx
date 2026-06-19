@@ -1481,20 +1481,32 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
 
                 // 事件处理器必须在 loadSource 之前注册
                 // 因为 manifest 加载在 loadSource 内部同步完成
-                hls.on(Hls.Events.MANIFEST_PARSED, () => {
-                  addDebugLog(`HLS: MANIFEST_PARSED`);
+                hls.on(Hls.Events.MANIFEST_PARSED, (_event: any, data: any) => {
+                  const levels = data.levels;
+                  const firstLevel = levels?.[0];
+                  const frags = firstLevel?.details?.fragments;
+                  addDebugLog(`HLS: MANIFEST_PARSED, levels=${levels?.length}, frags=${frags?.length}`);
+                  if (frags && frags.length > 0) {
+                    addDebugLog(`HLS: first frag relurl=${frags[0].relurl}, baseurl=${frags[0].baseurl}, url=${String(frags[0].url || '').substring(0, 80)}`);
+                  }
                 });
                 hls.on(Hls.Events.LEVEL_LOADED, (_event: any, data: any) => {
                   addDebugLog(`HLS: LEVEL_LOADED, details=${data.details}`);
                 });
                 hls.on(Hls.Events.FRAG_LOADING, (_event: any, data: any) => {
-                  addDebugLog(`HLS: FRAG_LOADING, sn=${data.frag?.sn}, url=${String(data.frag?.url || '').substring(0, 60)}`);
+                  addDebugLog(`HLS: FRAG_LOADING, sn=${data.frag?.sn}, url=${String(data.frag?.url || '').substring(0, 80)}`);
                 });
                 hls.on(Hls.Events.FRAG_LOADED, (_event: any, data: any) => {
                   addDebugLog(`HLS: FRAG_LOADED, sn=${data.frag?.sn}`);
                 });
                 hls.on(Hls.Events.FRAG_BUFFERED, (_event: any, data: any) => {
                   addDebugLog(`HLS: FRAG_BUFFERED, sn=${data.frag?.sn}`);
+                });
+                hls.on(Hls.Events.BUFFER_CREATED, (_event: any, data: any) => {
+                  addDebugLog(`HLS: BUFFER_CREATED, tracks=${data.tracks ? Object.keys(data.tracks) : 'none'}`);
+                });
+                hls.on(Hls.Events.BUFFER_APPENDING, (_event: any, data: any) => {
+                  addDebugLog(`HLS: BUFFER_APPENDING, type=${data.type}, size=${data.data?.byteLength || data.data?.length}`);
                 });
 
                 hls.on(Hls.Events.ERROR, function (event: any, data: any) {
@@ -1531,6 +1543,16 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
 
                 hls.loadSource(url);
                 addDebugLog('customType: loadSource called');
+
+                // 诊断：检查 loadSource 后的状态
+                setTimeout(() => {
+                  addDebugLog(`HLS state: media=${!!hls.media}, levels=${hls.levels?.length}, autoStartLoad=${(hls as any).config?.autoStartLoad}`);
+                  // 手动触发 startLoad 确保片段加载启动
+                  if (hls.media && hls.levels?.length) {
+                    addDebugLog('HLS: manually calling startLoad()');
+                    hls.startLoad();
+                  }
+                }, 100);
               } catch (e) {
                 addDebugLog(`customType: attachMedia/loadSource failed: ${(e as Error).message}`);
                 return;
