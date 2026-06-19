@@ -263,7 +263,6 @@ function PlayPageClient() {
           try {
             // 检查是否有第一集的播放地址
             if (!source.episodes || source.episodes.length === 0) {
-              console.warn(`播放源 ${source.source_name} 没有可用的播放地址`);
               return null;
             }
 
@@ -315,7 +314,6 @@ function PlayPageClient() {
     setPrecomputedVideoInfo(newVideoInfoMap);
 
     if (successfulResults.length === 0) {
-      console.warn('所有播放源测速都失败，使用第一个播放源');
       return sources[0];
     }
 
@@ -357,17 +355,6 @@ function PlayPageClient() {
 
     // 按综合评分排序，选择最佳播放源
     resultsWithScore.sort((a, b) => b.score - a.score);
-
-    console.log('播放源评分排序结果:');
-    resultsWithScore.forEach((result, index) => {
-      console.log(
-        `${index + 1}. ${
-          result.source.source_name
-        } - 评分: ${result.score.toFixed(2)} (${result.testResult.quality}, ${
-          result.testResult.loadSpeed
-        }, ${result.testResult.pingTime}ms)`
-      );
-    });
 
     return resultsWithScore[0].source;
   };
@@ -516,7 +503,6 @@ function PlayPageClient() {
         newConfig
       );
       setSkipConfig(newConfig);
-      console.log('跳过片头片尾配置已保存:', newConfig);
     } catch (err) {
       console.error('保存跳过片头片尾配置失败:', err);
     }
@@ -594,7 +580,6 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
         setAvailableSources([detailData]);
         return [detailData];
       } catch (err) {
-        console.error('获取视频详情失败:', err);
         return [];
       } finally {
         setSourceSearchLoading(false);
@@ -617,7 +602,7 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
             );
             return allResults;
           });
-        }).catch((err) => { console.warn('后台源加载失败:', err); });
+        }).catch(() => {});
 
         // 先使用快速结果
         const allResults = filterAndMergeResults(
@@ -738,14 +723,12 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
           if (dlTask.writeDirectory === 'IndexedDB') {
             playlistContent = await browserReadPlaylist(currentId || dlTask.id);
             const segCount = (playlistContent.match(/#EXTINF:/g) || []).length;
-            console.log(`[本地播放] 浏览器端分段数量: ${segCount}`);
             
             for (let i = 1; i <= segCount; i++) {
               const buf = await browserReadSegment(currentId || dlTask.id, i);
               const blob = new Blob([buf], { type: 'video/mp2t' });
               const blobUrl = URL.createObjectURL(blob);
               segmentBlobUrls.push(blobUrl);
-              console.log(`[本地播放] 创建分段 blob URL ${i}/${segCount}: ${blobUrl}`);
             }
           } else {
             // Capacitor 端：从 Filesystem 读取所有分段
@@ -765,7 +748,6 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
             }
 
             const segCount = (playlistContent.match(/#EXTINF:/g) || []).length;
-            console.log(`[本地播放] Capacitor 端分段数量: ${segCount}`);
 
             const dirPath = dlTask.localPath.replace(/\/playlist\.m3u8$/, '');
             for (let i = 0; i < segCount; i++) {
@@ -780,7 +762,6 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
               const blob = new Blob([arr], { type: 'video/mp2t' });
               const blobUrl = URL.createObjectURL(blob);
               segmentBlobUrls.push(blobUrl);
-              console.log(`[本地播放] 创建分段 blob URL ${i + 1}/${segCount}: ${blobUrl}`);
             }
           }
 
@@ -806,12 +787,9 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
           m3u8Lines.push('#EXT-X-ENDLIST');
           const m3u8Content = m3u8Lines.join('\n');
           
-          console.log(`[本地播放] M3U8 播放列表内容:\n${m3u8Content}`);
-          
           // 创建 M3U8 blob URL
           const m3u8Blob = new Blob([m3u8Content], { type: 'application/vnd.apple.mpegurl' });
           const m3u8Url = URL.createObjectURL(m3u8Blob);
-          console.log(`[本地播放] M3U8 blob URL 创建成功: ${m3u8Url}`);
           
           setVideoUrl(m3u8Url);
           setLoading(false);
@@ -857,32 +835,6 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
       }
 
       let detailData: SearchResult = sourcesInfo[0];
-      // 指定源和id且无需优选
-      if (currentSource && currentId && !needPreferRef.current) {
-        const target = sourcesInfo.find(
-          (source) => source.source === currentSource && source.id === currentId
-        );
-        if (target) {
-          detailData = target;
-        } else {
-          setError('未找到匹配结果');
-          setLoading(false);
-          return;
-        }
-      }
-
-      // 未指定源和 id 或需要优选，且开启优选开关
-      if (
-        (!currentSource || !currentId || needPreferRef.current) &&
-        optimizationEnabled
-      ) {
-        setLoadingStage('preferring');
-        setLoadingMessage('⚡ 正在优选最佳播放源...');
-
-        detailData = await preferBestSource(sourcesInfo);
-      }
-
-      console.log(detailData.source, detailData.id);
 
       setNeedPrefer(false);
       setCurrentSource(detailData.source);
@@ -979,7 +931,6 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
 
       // 记录当前播放进度（仅在同一集数切换时恢复）
       const currentPlayTime = artPlayerRef.current?.currentTime || 0;
-      console.log('换源前当前播放时间:', currentPlayTime);
 
       // 清除前一个历史记录
       if (currentSourceRef.current && currentIdRef.current) {
@@ -988,7 +939,6 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
             currentSourceRef.current,
             currentIdRef.current
           );
-          console.log('已清除前一个播放记录');
         } catch (err) {
           console.error('清除播放记录失败:', err);
         }
@@ -1005,14 +955,6 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
         } catch (err) {
           console.error('清除跳过片头片尾配置失败:', err);
         }
-      }
-
-      const newDetail = availableSources.find(
-        (source) => source.source === newSource && source.id === newId
-      );
-      if (!newDetail) {
-        setError('未找到匹配结果');
-        return;
       }
 
       // 尝试跳转到当前正在播放的集数
@@ -1212,29 +1154,23 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
     }
 
     try {
-      await savePlayRecord(currentSourceRef.current, currentIdRef.current, {
-        title: videoTitleRef.current,
-        source_name: detailRef.current?.source_name || '',
-        year: detailRef.current?.year,
-        cover: detailRef.current?.poster || '',
-        index: currentEpisodeIndexRef.current + 1, // 转换为1基索引
-        total_episodes: detailRef.current?.episodes.length || 1,
-        play_time: Math.floor(currentTime),
-        total_time: Math.floor(duration),
-        save_time: Date.now(),
-        search_title: searchTitle,
-      });
+        await savePlayRecord(currentSourceRef.current, currentIdRef.current, {
+          title: videoTitleRef.current,
+          source_name: detailRef.current?.source_name || '',
+          year: detailRef.current?.year,
+          cover: detailRef.current?.poster || '',
+          index: currentEpisodeIndexRef.current + 1, // 转换为1基索引
+          total_episodes: detailRef.current?.episodes.length || 1,
+          play_time: Math.floor(currentTime),
+          total_time: Math.floor(duration),
+          save_time: Date.now(),
+          search_title: searchTitle,
+        });
 
-      lastSaveTimeRef.current = Date.now();
-      console.log('播放进度已保存:', {
-        title: videoTitleRef.current,
-        episode: currentEpisodeIndexRef.current + 1,
-        year: detailRef.current?.year,
-        progress: `${Math.floor(currentTime)}/${Math.floor(duration)}`,
-      });
-    } catch (err) {
-      console.error('保存播放进度失败:', err);
-    }
+        lastSaveTimeRef.current = Date.now();
+      } catch (err) {
+        console.error('保存播放进度失败:', err);
+      }
   };
 
   useEffect(() => {
@@ -1281,7 +1217,7 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
         const fav = await isFavorited(currentSource, currentId);
         setFavorited(fav);
       } catch (err) {
-        console.error('检查收藏状态失败:', err);
+        // 忽略错误
       }
     })();
   }, [currentSource, currentId]);
@@ -1451,7 +1387,6 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
       setError('视频地址无效');
       return;
     }
-    console.log(videoUrl);
 
     // 检测是否为WebKit浏览器
     const isWebkit =
@@ -1533,13 +1468,10 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
                 return;
               }
 
-              console.log(`[customType.m3u8] 被调用\n  url: ${url.substring(0, 100)}...`);
-
               if (video.hls) {
                 video.hls.destroy();
               }
 
-              console.log('[customType] 创建HLS实例...');
               let hls: Hls;
               try {
                 const customLoader = blockAdEnabledRef.current
@@ -1562,33 +1494,16 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
                 };
 
                 hls = new Hls(hlsConfig);
-                console.log('[customType] HLS实例创建成功');
               } catch (e) {
-                console.error(`[customType] HLS实例创建失败: ${(e as Error).message}\n  堆栈: ${(e as Error).stack}`);
+                console.error(`HLS实例创建失败: ${(e as Error).message}`);
                 return;
               }
 
-              // 监听分段加载事件
-              hls.on(Hls.Events.FRAG_LOADING, (_event: any, data: any) => {
-                console.log(`[HLS] FRAG_LOADING: ${data.frag?.url || 'N/A'}, sn=${data.frag?.sn}, level=${data.frag?.level}`);
-              });
-              hls.on(Hls.Events.FRAG_LOADED, (_event: any, data: any) => {
-                console.log(`[HLS] FRAG_LOADED: ${data.frag?.url || 'N/A'}, stats.loaded=${data.frag?.stats?.loaded}`);
-              });
-              hls.on(Hls.Events.BUFFER_APPENDING, (_event: any, data: any) => {
-                console.log(`[HLS] BUFFER_APPENDING: type=${data.type}`);
-              });
-
               try {
-                console.log('[customType] 绑定video...');
                 hls.attachMedia(video);
-                console.log('[customType] attachMedia 完成');
-
-                console.log('[customType] 调用 loadSource...');
                 hls.loadSource(url);
-                console.log('[customType] loadSource 成功');
               } catch (e) {
-                console.error(`[customType] loadSource/attachMedia 失败: ${(e as Error).message}`);
+                console.error(`loadSource/attachMedia 失败: ${(e as Error).message}`);
                 return;
               }
               video.hls = hls;
@@ -1616,11 +1531,9 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
                 if (data.fatal) {
                   switch (data.type) {
                     case Hls.ErrorTypes.NETWORK_ERROR:
-                      console.log('网络错误，尝试恢复...');
                       hls.startLoad();
                       break;
                     case Hls.ErrorTypes.MEDIA_ERROR:
-                      console.log('媒体错误，尝试恢复...');
                       hls.recoverMediaError();
                       setTimeout(() => {
                         if (video && !video.paused) {
@@ -1632,7 +1545,6 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
                       }, 500);
                       break;
                     default:
-                      console.log('无法恢复的错误');
                       hls.destroy();
                       break;
                   }
@@ -1756,7 +1668,6 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
               target = Math.max(0, duration - 5);
             }
             artPlayerRef.current.currentTime = target;
-            console.log('成功恢复播放进度到:', resumeTimeRef.current);
             
             // 确保视频和音频同步，强制刷新播放状态
             setTimeout(() => {
@@ -1766,14 +1677,14 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
                   video.pause();
                   setTimeout(() => {
                     video.play().catch(() => {
-                      console.warn('自动播放失败，需要用户手动点击播放');
+                      // 自动播放失败，需要用户手动点击播放
                     });
                   }, 100);
                 }
               }
             }, 500);
           } catch (err) {
-            console.warn('恢复播放进度失败:', err);
+            // 恢复播放进度失败
           }
         }
         resumeTimeRef.current = null;
@@ -1853,7 +1764,6 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
           const d = detailRef.current;
           const idx = currentEpisodeIndexRef.current;
           if (d?.episodes && idx < d.episodes.length - 1) {
-            console.log(`自动切换到下一集 ${idx + 2}`);
             setCurrentEpisodeIndex(idx + 1);
           }
         }
@@ -1863,9 +1773,7 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
       if (artPlayerRef.current?.video) {
         const videoEl = artPlayerRef.current.video as HTMLVideoElement;
         videoEl.addEventListener('error', (e) => {
-          console.error(
-            `video.onerror 事件:\n  URL: ${videoEl.currentSrc || videoUrl}\n  code: ${videoEl.error?.code || 'N/A'}\n  message: ${videoEl.error?.message || 'N/A'}`
-          );
+          // 视频加载错误
         });
       }
 
@@ -1906,26 +1814,22 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
             // 进入全屏时，强制横屏
             try {
               await ScreenOrientation.lock({ orientation: 'landscape' });
-              console.log('Capacitor屏幕方向锁定成功');
             } catch (e) {
-              console.log('Capacitor屏幕锁定失败，使用CSS备用', e);
               // 如果Capacitor失败，尝试使用Web API
               try {
                 if ('orientation' in screen && 'lock' in screen.orientation) {
                   await (screen.orientation as any).lock('landscape');
-                  console.log('Web Screen Orientation API锁定成功');
                 }
               } catch (webError) {
-                console.log('Web Screen Orientation API也失败', webError);
+                // Web Screen Orientation API也失败
               }
             }
             
             // 隐藏移动端状态栏
             try {
               await StatusBar.hide();
-              console.log('状态栏隐藏成功');
             } catch (e) {
-              console.log('状态栏隐藏失败', e);
+              // 状态栏隐藏失败
             }
             
             // 隐藏移动端导航栏和状态栏
@@ -1996,15 +1900,13 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
             // 恢复状态栏显示
             try {
               await StatusBar.show();
-              console.log('状态栏恢复显示成功');
             } catch (e) {
-              console.log('状态栏恢复显示失败', e);
+              // 状态栏恢复显示失败
             }
             
             // 恢复播放器控制栏
             if (artPlayerRef.current) {
               artPlayerRef.current.controls = true;
-              console.log('恢复播放器控制栏');
             }
             
             // 恢复viewport设置
@@ -2099,17 +2001,14 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
             // 退出网页全屏时，恢复正常
             try {
               await ScreenOrientation.unlock();
-              console.log('Capacitor屏幕方向解锁成功');
             } catch (e) {
-              console.log('Capacitor屏幕解锁失败', e);
               // 如果Capacitor失败，尝试使用Web API
               try {
                 if ('orientation' in screen && 'unlock' in screen.orientation) {
                   (screen.orientation as any).unlock();
-                  console.log('Web Screen Orientation API解锁成功');
                 }
               } catch (webError) {
-                console.log('Web Screen Orientation API解锁失败', webError);
+                // Web Screen Orientation API解锁失败
               }
             }
             
@@ -2149,9 +2048,7 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
         );
       }
     } catch (err) {
-      console.error(
-        `创建播放器失败:\n  URL: ${videoUrl}\n  本地播放: ${isLocalPlayback}\n  错误: ${(err as Error).message || JSON.stringify(err)}`
-      );
+      console.error(`创建播放器失败: ${(err as Error).message || JSON.stringify(err)}`);
       setError('播放器初始化失败');
     }
   }, [Artplayer, Hls, videoUrl, loading, blockAdEnabled, isLocalPlayback]);

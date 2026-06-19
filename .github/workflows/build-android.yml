@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build & Release Android APK
 
 on:
   push:
@@ -10,9 +10,12 @@ on:
         required: false
         type: string
 
+permissions:
+  contents: write
+
 jobs:
   build:
-    name: Build Android APK
+    name: Build & Release Android APK
     runs-on: ubuntu-latest
 
     steps:
@@ -50,23 +53,77 @@ jobs:
         env:
           CAPACITOR_SERVER_URL: ${{ github.event.inputs.server_url || secrets.CAPACITOR_SERVER_URL || '' }}
 
-      - name: Generate release keystore (if not exists)
+      # ── 正式签名密钥（从 GitHub Secrets 读取） ──────────────────
+      - name: Decode release keystore
         run: |
-          cd android
-          if [ ! -f moontv-release-key.keystore ]; then
-            keytool -genkey -v -keystore moontv-release-key.keystore -alias moontv -keyalg RSA -keysize 2048 -validity 10000 \
-              -storepass moontv123 -keypass moontv123 \
-              -dname "CN=MoonTV, OU=MoonTV, O=MoonTV, L=Beijing, ST=Beijing, C=CN"
-          fi
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android/moontv-release-key.keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
 
+      # ── 自动递增版本号（基于 git commit 数） ───────────────────
+      - name: Compute version info
+        id: version
+        run: |
+          COMMIT_COUNT=$(git rev-list --count HEAD)
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          BUILD_DATE=$(date +'%Y%m%d')
+          DISPLAY_DATE=$(date +'%Y-%m-%d')
+          VERSION="1.0.${COMMIT_COUNT}"
+          RELEASE_NAME="v${VERSION} - ${DISPLAY_DATE}"
+          APK_NAME="MoonTV-v${VERSION}-${SHORT_SHA}.apk"
+
+          echo "commit_count=${COMMIT_COUNT}" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "build_date=${BUILD_DATE}" >> "$GITHUB_OUTPUT"
+          echo "display_date=${DISPLAY_DATE}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "release_name=${RELEASE_NAME}" >> "$GITHUB_OUTPUT"
+          echo "apk_name=${APK_NAME}" >> "$GITHUB_OUTPUT"
+
+          echo "Version: ${VERSION}"
+          echo "Release: ${RELEASE_NAME}"
+
+      # ── 构建 Release APK（使用正式签名） ──────────────────────
       - name: Build Release APK
         run: |
           cd android
           ./gradlew assembleRelease
+        env:
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
 
-      - name: Upload APK
+      - name: Prepare signed APK
+        run: |
+          mkdir -p release
+          cp android/app/build/outputs/apk/release/app-release.apk \
+             "release/${{ steps.version.outputs.apk_name }}"
+
+      # ── 创建 GitHub Release 并上传 APK ────────────────────────
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: ${{ steps.version.outputs.release_name }}
+          body: |
+            ## MoonTV ${{ steps.version.outputs.release_name }}
+
+            **Commit:** ${{ github.sha }}
+            **Build Date:** ${{ steps.version.outputs.display_date }}
+            **Version Code:** ${{ steps.version.outputs.commit_count }}
+
+            ### 安装说明
+            下载下方 APK 文件，在 Android 设备上允许「未知来源」安装后即可使用。
+          files: release/*.apk
+          generate_release_notes: true
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── 同时保留 Artifact 备份 ────────────────────────────────
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: moontv-release-apk
-          path: android/app/build/outputs/apk/release/app-release.apk
+          path: release/*.apk
           retention-days: 30

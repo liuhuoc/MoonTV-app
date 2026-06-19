@@ -62,7 +62,6 @@ export function getImageProxyUrl(): string | null {
  */
 export function processImageUrl(originalUrl: string): string {
   if (!originalUrl) {
-    console.log('[图片处理] 空URL，跳过');
     return originalUrl;
   }
 
@@ -71,7 +70,6 @@ export function processImageUrl(originalUrl: string): string {
   // 豆瓣 CDN 图片修正：.jpg 后缀实际是 webp 格式
   if (url.includes('doubanio.com') && /\.jpg(\?|$)/i.test(url)) {
     url = url.replace(/\.jpg(\?|$)/i, '.webp$1');
-    console.log('[图片处理] 豆瓣后缀修正 jpg→webp:', url.substring(0, 100));
   }
 
   const proxyUrl = getImageProxyUrl();
@@ -81,11 +79,9 @@ export function processImageUrl(originalUrl: string): string {
         .replace('{url}', encodeURIComponent(url))
         .replace('%7Burl%7D', encodeURIComponent(url))
       : `${proxyUrl}${encodeURIComponent(url)}`;
-    console.log('[图片处理] 代理模式:', result.substring(0, 100));
     return result;
   }
 
-  console.log('[图片处理] 直连:', url.substring(0, 100));
   return url;
 }
 

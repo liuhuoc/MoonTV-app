@@ -6,7 +6,6 @@ import 'sweetalert2/dist/sweetalert2.min.css';
 
 import { SiteProvider } from '../components/SiteProvider';
 import { ThemeProvider } from '../components/ThemeProvider';
-import DebugConsole from '../components/DebugConsole';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -48,7 +47,6 @@ export default function RootLayout({
             announcement='本网站仅提供影视信息搜索服务，所有内容均来自第三方网站。'
           >
             {children}
-            <DebugConsole />
           </SiteProvider>
         </ThemeProvider>
       </body>
