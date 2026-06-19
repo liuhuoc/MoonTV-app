@@ -38,17 +38,9 @@ import EpisodeSelector from '@/components/EpisodeSelector';
 import PageLayout from '@/components/PageLayout';
 
 // 扩展 HTMLVideoElement 类型以支持 hls 属性
-// 本地播放上下文类型
-type LocalPlaybackCtx =
-  | { platform: 'capacitor'; dirPath: string; writeDirEnum: Directory }
-  | { platform: 'browser'; taskId: string };
-
 declare global {
   interface HTMLVideoElement {
     hls?: any;
-  }
-  interface Window {
-    __localPlaybackCtx?: LocalPlaybackCtx | null;
   }
 }
 
@@ -348,6 +340,97 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
     }
   }
 
+  // 本地视频 HLS.js Loader：从文件系统按需加载分段，实现点开即播
+  class LocalVideoLoader {
+    private stats: any;
+
+    constructor() {
+      this.stats = { aborted: false };
+    }
+
+    load(context: any, config: any, callbacks: any) {
+      const ctx = (window as any).__localVideoCtx;
+      if (!ctx) {
+        callbacks.onError({ type: 'networkError', details: 'loaderError', fatal: false }, context);
+        return;
+      }
+
+      try {
+        if (context.type === 'manifest' || context.type === 'level') {
+          callbacks.onSuccess(
+            { url: context.url, data: ctx.m3u8Content },
+            { total: ctx.m3u8Content.length, loaded: ctx.m3u8Content.length, retry: 0, chunks: [] },
+            context
+          );
+        } else if (context.type === 'fragment') {
+          const match = context.url.match(/seg_(\d+)\.ts/);
+          if (!match) {
+            callbacks.onError({ type: 'networkError', details: 'loaderError', fatal: false }, context);
+            return;
+          }
+          const segIndex = parseInt(match[1], 10);
+          this.loadSegment(ctx, segIndex, callbacks, context);
+        } else {
+          callbacks.onError({ type: 'networkError', details: 'loaderError', fatal: false }, context);
+        }
+      } catch (e) {
+        callbacks.onError({ type: 'networkError', details: 'loaderError', fatal: false }, context);
+      }
+    }
+
+    private async loadSegment(ctx: any, segIndex: number, callbacks: any, context: any) {
+      try {
+        if (ctx.segmentCache.has(segIndex)) {
+          const data = ctx.segmentCache.get(segIndex);
+          callbacks.onSuccess(
+            { url: context.url, data },
+            { total: data.byteLength, loaded: data.byteLength, retry: 0, chunks: [] },
+            context
+          );
+          return;
+        }
+
+        let arrayBuffer: ArrayBuffer;
+        const segFileName = `seg_${String(segIndex).padStart(5, '0')}.ts`;
+
+        if (ctx.writeDirectory === 'IndexedDB') {
+          const buf = await ctx.browserReadSegment(ctx.taskId, segIndex + 1);
+          arrayBuffer = buf;
+        } else {
+          const { Filesystem } = await import('@capacitor/filesystem');
+          const segPath = `${ctx.dirPath}/${segFileName}`;
+          const segResult = await Filesystem.readFile({ path: segPath, directory: ctx.writeDirEnum });
+          const base64 = segResult.data as string;
+          const binaryStr = atob(base64);
+          const bytes = new Uint8Array(binaryStr.length);
+          for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+          arrayBuffer = bytes.buffer;
+        }
+
+        ctx.segmentCache.set(segIndex, arrayBuffer);
+
+        callbacks.onSuccess(
+          { url: context.url, data: arrayBuffer },
+          { total: arrayBuffer.byteLength, loaded: arrayBuffer.byteLength, retry: 0, chunks: [] },
+          context
+        );
+      } catch (e) {
+        callbacks.onError(
+          { type: 'networkError', details: 'loaderError', fatal: false, error: e },
+          context
+        );
+      }
+    }
+
+    abort() {
+      this.stats.aborted = true;
+    }
+
+    destroy() {
+      this.stats.aborted = true;
+    }
+  }
+
   // 当集数索引变化时自动更新视频地址
   useEffect(() => {
     updateVideoUrl(detail, currentEpisodeIndex);
@@ -542,12 +625,11 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
             dirPath = dlTask.localPath.replace(/\/playlist\.m3u8$/, '');
           }
 
-          // 解析 M3U8 获取每个分段的时长
+          // 解析分段时长
           const extinfRegex = /#EXTINF:([\d.]+)/g;
           let match;
           while ((match = extinfRegex.exec(playlistContent)) !== null) {
-            const duration = parseFloat(match[1]);
-            segmentDurations.push(duration);
+            segmentDurations.push(parseFloat(match[1]));
           }
 
           const segCount = segmentDurations.length;
@@ -557,40 +639,7 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
             return;
           }
 
-          // 加载分段并生成 blob URL（并行分批加载，每批 5 个）
-          setLoadingMessage('正在加载视频数据...');
-          const segmentBlobUrls: string[] = new Array(segCount);
-          const batchSize = 5;
-          for (let i = 0; i < segCount; i += batchSize) {
-            const batchEnd = Math.min(i + batchSize, segCount);
-            const batchPromises: Promise<void>[] = [];
-            for (let j = i; j < batchEnd; j++) {
-              const idx = j;
-              batchPromises.push((async () => {
-                const segFileName = `seg_${String(idx).padStart(5, '0')}.ts`;
-                if (dlTask.writeDirectory === 'IndexedDB') {
-                  const buf = await browserReadSegment(currentId || dlTask.id, idx + 1);
-                  const blob = new Blob([buf], { type: 'video/mp2t' });
-                  segmentBlobUrls[idx] = URL.createObjectURL(blob);
-                } else {
-                  const segPath = `${dirPath}/${segFileName}`;
-                  const segResult = await Filesystem.readFile({ path: segPath, directory: writeDirEnum });
-                  const base64 = segResult.data as string;
-                  const bytes = atob(base64);
-                  const arr = new Uint8Array(bytes.length);
-                  for (let k = 0; k < bytes.length; k++) arr[k] = bytes.charCodeAt(k);
-                  const blob = new Blob([arr], { type: 'video/mp2t' });
-                  segmentBlobUrls[idx] = URL.createObjectURL(blob);
-                }
-              })());
-            }
-            await Promise.all(batchPromises);
-            // 更新加载进度
-            const progress = Math.min(100, Math.round((batchEnd / segCount) * 100));
-            setLoadingMessage(`正在加载视频数据... ${progress}%`);
-          }
-
-          // 构建 M3U8 播放列表
+          // 构建 M3U8，使用相对路径（由 LocalVideoLoader 按需加载）
           const m3u8Lines = [
             '#EXTM3U',
             '#EXT-X-VERSION:3',
@@ -600,22 +649,45 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
           ];
           for (let i = 0; i < segCount; i++) {
             m3u8Lines.push(`#EXTINF:${segmentDurations[i].toFixed(3)},`);
-            m3u8Lines.push(segmentBlobUrls[i]);
+            m3u8Lines.push(`seg_${String(i).padStart(5, '0')}.ts`);
           }
           m3u8Lines.push('#EXT-X-ENDLIST');
           const m3u8Content = m3u8Lines.join('\n');
 
-          // 创建 M3U8 blob URL
-          const m3u8Blob = new Blob([m3u8Content], { type: 'application/vnd.apple.mpegurl' });
-          const m3u8Url = URL.createObjectURL(m3u8Blob);
+          // 预加载前 3 个分段，加快启动
+          setLoadingMessage('正在预加载视频...');
+          const preloadCount = Math.min(3, segCount);
+          const preloadCache = new Map<number, ArrayBuffer>();
+          await Promise.all(Array.from({ length: preloadCount }, async (_, i) => {
+            const segFileName = `seg_${String(i).padStart(5, '0')}.ts`;
+            if (dlTask.writeDirectory === 'IndexedDB') {
+              const buf = await browserReadSegment(currentId || dlTask.id, i + 1);
+              preloadCache.set(i, buf);
+            } else {
+              const segPath = `${dirPath}/${segFileName}`;
+              const segResult = await Filesystem.readFile({ path: segPath, directory: writeDirEnum });
+              const base64 = segResult.data as string;
+              const binaryStr = atob(base64);
+              const bytes = new Uint8Array(binaryStr.length);
+              for (let j = 0; j < binaryStr.length; j++) bytes[j] = binaryStr.charCodeAt(j);
+              preloadCache.set(i, bytes.buffer);
+            }
+          }));
 
-          // 保存清理函数
-          (window as any).__localVideoCleanup = () => {
-            segmentBlobUrls.forEach(url => URL.revokeObjectURL(url));
-            URL.revokeObjectURL(m3u8Url);
+          // 保存上下文供 LocalVideoLoader 使用
+          (window as any).__localVideoCtx = {
+            m3u8Content,
+            segmentCache: preloadCache,
+            writeDirectory: dlTask.writeDirectory,
+            writeDirEnum,
+            dirPath,
+            taskId: currentId || dlTask.id,
+            browserReadSegment,
           };
 
-          setVideoUrl(m3u8Url);
+          // 创建 M3U8 blob URL
+          const m3u8Blob = new Blob([m3u8Content], { type: 'application/vnd.apple.mpegurl' });
+          setVideoUrl(URL.createObjectURL(m3u8Blob));
           setLoading(false);
         } catch (e) {
           setError(`读取本地视频失败: ${(e as Error).message}`);
@@ -1252,6 +1324,10 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
       artPlayerRef.current.destroy();
       artPlayerRef.current = null;
     }
+    // 清除本地视频上下文，防止远程视频错误使用 LocalVideoLoader
+    if (!isLocalPlayback) {
+      delete (window as any).__localVideoCtx;
+    }
 
     try {
       // 创建新的播放器实例
@@ -1308,9 +1384,16 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
 
               let hls: Hls;
               try {
-                const customLoader = blockAdEnabledRef.current
-                  ? CustomHlsJsLoader
-                  : Hls.DefaultConfig.loader;
+                // 本地视频使用 LocalVideoLoader 从文件系统按需加载分段
+                // 在线视频使用 CustomHlsJsLoader（去广告）或默认 loader
+                let loaderClass: any;
+                if ((window as any).__localVideoCtx) {
+                  loaderClass = LocalVideoLoader;
+                } else if (blockAdEnabledRef.current) {
+                  loaderClass = CustomHlsJsLoader;
+                } else {
+                  loaderClass = Hls.DefaultConfig.loader;
+                }
 
                 const hlsConfig: any = {
                   debug: false,
@@ -1324,7 +1407,7 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
                   maxBufferSize: 60 * 1000 * 1000,
 
                   /* 自定义loader */
-                  loader: customLoader,
+                  loader: loaderClass,
                 };
 
                 hls = new Hls(hlsConfig);
