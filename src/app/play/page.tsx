@@ -1456,7 +1456,7 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
                   debug: false,
                   enableWorker: true,
                   lowLatencyMode: false,
-                  autoStartLoad: true,
+                  autoStartLoad: false,
 
                   /* 缓冲/内存相关 */
                   maxBufferLength: 30,
@@ -1487,8 +1487,12 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
                   const frags = firstLevel?.details?.fragments;
                   addDebugLog(`HLS: MANIFEST_PARSED, levels=${levels?.length}, frags=${frags?.length}`);
                   if (frags && frags.length > 0) {
-                    addDebugLog(`HLS: first frag relurl=${frags[0].relurl}, baseurl=${frags[0].baseurl}, url=${String(frags[0].url || '').substring(0, 80)}`);
+                    addDebugLog(`HLS: first frag relurl=${frags[0].relurl}, url=${String(frags[0].url || '').substring(0, 80)}`);
                   }
+                  // 在 MANIFEST_PARSED 之后手动触发 startLoad
+                  // 此时 StreamController.levels 已经就绪
+                  addDebugLog('HLS: calling startLoad() after MANIFEST_PARSED');
+                  hls.startLoad();
                 });
                 hls.on(Hls.Events.LEVEL_LOADED, (_event: any, data: any) => {
                   addDebugLog(`HLS: LEVEL_LOADED, details=${data.details}`);
@@ -1543,16 +1547,6 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
 
                 hls.loadSource(url);
                 addDebugLog('customType: loadSource called');
-
-                // 诊断：检查 loadSource 后的状态
-                setTimeout(() => {
-                  const lc = (hls as any).levelController;
-                  const lcLevels = lc?.levels || lc?._levels;
-                  addDebugLog(`HLS state: media=${!!hls.media}, hls.levels=${hls.levels?.length}, lc._levels=${lcLevels?.length}, lc=${!!lc}, autoStartLoad=${(hls as any).config?.autoStartLoad}`);
-                  // 无条件手动调用 startLoad
-                  addDebugLog('HLS: manually calling startLoad()');
-                  hls.startLoad();
-                }, 100);
               } catch (e) {
                 addDebugLog(`customType: attachMedia/loadSource failed: ${(e as Error).message}`);
                 return;
