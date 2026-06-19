@@ -96,6 +96,10 @@ export default function SettingsPage() {
   const [customSources, setCustomSources] = useState<ApiSite[]>([]);
   const [allSources, setAllSources] = useState<ApiSite[]>([]);
 
+  // 源检测相关
+  const [testKeyword, setTestKeyword] = useState('三体');
+  const [isTestingAll, setIsTestingAll] = useState(false);
+
   // 新增源弹窗
   const [showAddSource, setShowAddSource] = useState(false);
   const [newSourceName, setNewSourceName] = useState('');
@@ -212,7 +216,7 @@ export default function SettingsPage() {
     }
   };
 
-  const handleTestSource = async (source: ApiSite) => {
+  const handleTestSource = async (source: ApiSite, keyword: string) => {
     const host = source.api ? (() => { try { return new URL(source.api).hostname; } catch { return source.api; } })() : '';
     const statusesRef = sourceStatusesRef.current;
     statusesRef[source.key] = {
@@ -225,8 +229,8 @@ export default function SettingsPage() {
     saveSourceStatuses(statusesRef);
 
     try {
-      // 与播放页换源逻辑一致：搜索关键字 → 取第一个结果的 M3U8 链接 → 测速
-      const searchResults = await searchFromApi(source, '三体');
+      // 搜索关键字 → 取第一个结果的 M3U8 链接 → 测速
+      const searchResults = await searchFromApi(source, keyword);
       if (!searchResults || searchResults.length === 0) {
         throw new Error('无搜索结果');
       }
@@ -247,7 +251,7 @@ export default function SettingsPage() {
         quality: testResult.quality,
         loadSpeed: testResult.loadSpeed,
       };
-    } catch (err) {
+    } catch {
       // 回退到简单的 HTTP 连通性测试
       const startTime = Date.now();
       try {
@@ -275,6 +279,20 @@ export default function SettingsPage() {
     }
     setSourceStatuses({ ...statusesRef });
     saveSourceStatuses(statusesRef);
+  };
+
+  // 并行检测所有源
+  const handleTestAllSources = async () => {
+    if (!testKeyword.trim()) return;
+    setIsTestingAll(true);
+    const keyword = testKeyword.trim();
+    // 并行检测，每批最多 5 个源
+    const batchSize = 5;
+    for (let i = 0; i < allSources.length; i += batchSize) {
+      const batch = allSources.slice(i, i + batchSize);
+      await Promise.all(batch.map(source => handleTestSource(source, keyword)));
+    }
+    setIsTestingAll(false);
   };
 
   const handleAddSource = () => {
@@ -604,44 +622,55 @@ export default function SettingsPage() {
                   </div>
                 </div>
 
-                {/* 一键检测 / 禁用失败源 */}
-                <div className='flex gap-2'>
+                {/* 搜索关键字 / 一键检测 */}
+                <div className='flex gap-2 mb-2'>
+                  <input
+                    type='text'
+                    value={testKeyword}
+                    onChange={(e) => setTestKeyword(e.target.value)}
+                    placeholder='输入检测关键字'
+                    className='flex-1 px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500'
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleTestAllSources(); }}
+                  />
                   <button
-                    onClick={async () => {
-                      for (const source of allSources) {
-                        await handleTestSource(source);
-                      }
-                    }}
-                    className='flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border border-blue-300 dark:border-blue-700 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors text-xs font-medium'
-                  >
-                    <RefreshCw className='w-3 h-3' />
-                    一键检测全部
-                  </button>
-                  <button
-                    onClick={() => {
-                      const failed = new Set<string>();
-                      Object.entries(sourceStatuses).forEach(([key, status]) => {
-                        if (status.status === 'error') failed.add(key);
-                      });
-                      if (failed.size === 0) return;
-                      setEnabledSources(prev => {
-                        const next = new Set(prev);
-                        failed.forEach(k => next.delete(k));
-                        saveEnabledSources(next);
-                        return next;
-                      });
-                    }}
-                    disabled={!Object.values(sourceStatuses).some(s => s.status === 'error')}
-                    className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border transition-colors text-xs font-medium ${
-                      Object.values(sourceStatuses).some(s => s.status === 'error')
-                        ? 'border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20'
-                        : 'border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-600 cursor-not-allowed'
+                    onClick={handleTestAllSources}
+                    disabled={isTestingAll || !testKeyword.trim()}
+                    className={`flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                      isTestingAll || !testKeyword.trim()
+                        ? 'border border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-600 cursor-not-allowed'
+                        : 'border border-blue-300 dark:border-blue-700 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20'
                     }`}
                   >
-                    <WifiOff className='w-3 h-3' />
-                    禁用全部失败源
+                    <RefreshCw className={`w-3 h-3 ${isTestingAll ? 'animate-spin' : ''}`} />
+                    {isTestingAll ? '检测中...' : '检测全部'}
                   </button>
                 </div>
+
+                {/* 禁用全部失败源 */}
+                <button
+                  onClick={() => {
+                    const failed = new Set<string>();
+                    Object.entries(sourceStatuses).forEach(([key, status]) => {
+                      if (status.status === 'error') failed.add(key);
+                    });
+                    if (failed.size === 0) return;
+                    setEnabledSources(prev => {
+                      const next = new Set(prev);
+                      failed.forEach(k => next.delete(k));
+                      saveEnabledSources(next);
+                      return next;
+                    });
+                  }}
+                  disabled={!Object.values(sourceStatuses).some(s => s.status === 'error')}
+                  className={`w-full flex items-center justify-center gap-1.5 py-2 rounded-lg border transition-colors text-xs font-medium ${
+                    Object.values(sourceStatuses).some(s => s.status === 'error')
+                      ? 'border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20'
+                      : 'border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-600 cursor-not-allowed'
+                  }`}
+                >
+                  <WifiOff className='w-3 h-3' />
+                  禁用全部失败源
+                </button>
 
                 {/* 源列表 */}
                 <div className='space-y-1 max-h-[400px] overflow-y-auto pr-1'>
@@ -712,7 +741,7 @@ export default function SettingsPage() {
 
                         <div className='flex items-center gap-1 flex-shrink-0'>
                           <button
-                            onClick={() => handleTestSource(source)}
+                            onClick={() => handleTestSource(source, testKeyword || '三体')}
                             className='p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors'
                             title='测试连接'
                           >
