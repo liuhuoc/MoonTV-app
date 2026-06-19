@@ -1488,8 +1488,11 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
                 hls.on(Hls.Events.MEDIA_ATTACHED, () => {
                   addDebugLog('HLS: MEDIA_ATTACHED');
                 });
+                let manifestLoadingCount = 0;
                 hls.on(Hls.Events.MANIFEST_LOADING, () => {
-                  addDebugLog('HLS: MANIFEST_LOADING');
+                  manifestLoadingCount++;
+                  console.log(`[TRACE] MANIFEST_LOADING #${manifestLoadingCount} at ${performance.now().toFixed(1)}ms`);
+                  addDebugLog(`HLS: MANIFEST_LOADING #${manifestLoadingCount}`);
                 });
                 hls.on(Hls.Events.MANIFEST_LOADED, () => {
                   addDebugLog('HLS: MANIFEST_LOADED');
