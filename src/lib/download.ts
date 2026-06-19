@@ -3,7 +3,7 @@
 import { CapacitorHttp, type HttpResponse, Capacitor } from '@capacitor/core';
 import { Directory, Filesystem } from '@capacitor/filesystem';
 import { getDownloadSettings } from './settings';
-import { browserSaveSegment, browserSavePlaylist, browserDeleteTask } from './storage';
+import { browserSaveSegment, browserSavePlaylist, browserDeleteTask, browserSegmentExists } from './storage';
 import { deletePlayRecord } from './db.client';
 
 const activeAbortControllers = new Map<string, AbortController>();
@@ -158,6 +158,7 @@ export function pauseDownload(taskId: string): void {
     try { ctrl.abort(); } catch { /* ignore */ }
     activeAbortControllers.delete(taskId);
   }
+  // 同步设置 paused 状态，后续 catch 块会检查此状态避免覆盖
   updateDownloadTask(taskId, { status: 'paused' });
 }
 
@@ -309,6 +310,13 @@ export async function startDownload(taskId: string): Promise<void> {
       await downloadWithProgress(taskId, url, fileName, controller.signal);
     }
   } catch (error) {
+    // 如果任务已被用户暂停（pauseDownload 设置了 paused 状态），不要覆盖为 failed
+    const currentTasks = getDownloadTasks();
+    const currentTask = currentTasks.find(t => t.id === taskId);
+    if (currentTask?.status === 'paused') {
+      // 用户主动暂停，静默退出，不改变状态
+      return;
+    }
     updateDownloadTask(taskId, {
       status: 'failed',
       error: (error as Error).message || '下载失败',
@@ -390,7 +398,24 @@ async function downloadHlsStream(taskId: string, playlistUrl: string, fileName: 
 
   // 浏览器环境：下载所有片段到 IndexedDB，保留用于本地播放
   if (!isCapacitor()) {
+    // 断点续传：检查哪些片段已经下载
+    let alreadyDownloaded = 0;
     for (let i = 0; i < segments.length; i++) {
+      if (signal?.aborted) throw new Error('下载已取消');
+      if (await browserSegmentExists(taskId, i + 1)) {
+        alreadyDownloaded++;
+      } else {
+        break; // 一旦遇到未下载的，后面的都未下载（顺序下载）
+      }
+    }
+    if (alreadyDownloaded > 0) {
+      updateDownloadTask(taskId, {
+        progress: Math.round((alreadyDownloaded / segments.length) * 100),
+        speed: `已跳过 ${alreadyDownloaded}/${segments.length} 片段`,
+      });
+    }
+
+    for (let i = alreadyDownloaded; i < segments.length; i++) {
       if (signal?.aborted) throw new Error('下载已取消');
       const segIndex = i + 1;
       updateDownloadTask(taskId, { speed: `下载片段 ${segIndex}/${segments.length}` });
@@ -435,24 +460,60 @@ async function downloadHlsStream(taskId: string, playlistUrl: string, fileName: 
     return;
   }
 
-  // Capacitor 环境：确定写入目录，静默处理"已存在"错误
+  // Capacitor 环境：确定写入目录
+  // 断点续传时使用任务保存的 writeDirectory，避免因目录重新探测导致找不到已下载片段
   let writeDir = Directory.Data;
-  const ensureDir = async (path: string, dir: Directory) => {
-    try { await Filesystem.mkdir({ path, directory: dir, recursive: true }); } catch { /* mkdir 失败也继续 */ }
-  };
-  try { await ensureDir(dirPath, Directory.Data); } catch { /* fall through */ }
-  try { await ensureDir(dirPath, Directory.Library); writeDir = Directory.Library; } catch { /* fall through */ }
+  if (task?.writeDirectory === 'Library') {
+    writeDir = Directory.Library;
+  } else if (task?.writeDirectory === 'Data') {
+    writeDir = Directory.Data;
+  } else {
+    // 新下载：探测可用目录
+    const ensureDir = async (path: string, dir: Directory) => {
+      try { await Filesystem.mkdir({ path, directory: dir, recursive: true }); } catch { /* mkdir 失败也继续 */ }
+    };
+    try { await ensureDir(dirPath, Directory.Data); } catch { /* fall through */ }
+    try { await ensureDir(dirPath, Directory.Library); writeDir = Directory.Library; } catch { /* fall through */ }
+  }
 
   const threadCount = getDownloadSettings().downloadThreads;
   const segCount = segments.length;
 
+  // 断点续传：检查哪些片段已经下载到磁盘
+  let alreadyDownloaded = 0;
+  for (let i = 0; i < segCount; i++) {
+    if (signal?.aborted) throw new Error('下载已取消');
+    const segFileName = `seg_${String(i).padStart(5, '0')}.ts`;
+    const segFilePath = `${dirPath}/${segFileName}`;
+    try {
+      await Filesystem.stat({ path: segFilePath, directory: writeDir });
+      alreadyDownloaded++;
+    } catch {
+      break; // 一旦遇到未下载的，后面的都未下载（顺序下载）
+    }
+  }
+  if (alreadyDownloaded > 0) {
+    updateDownloadTask(taskId, {
+      progress: Math.round((alreadyDownloaded / segCount) * 100),
+      downloadedBytes: 0,
+      speed: `已跳过 ${alreadyDownloaded}/${segCount} 片段`,
+    });
+  }
+
   // 逐段下载+立即写入磁盘：每批 threadCount 个片段并发
-  for (let batch = 0; batch < segCount; batch += threadCount) {
+  const startBatch = Math.floor(alreadyDownloaded / threadCount);
+  for (let batch = startBatch * threadCount; batch < segCount; batch += threadCount) {
     if (signal?.aborted) throw new Error('下载已取消');
 
     const batchEnd = Math.min(batch + threadCount, segCount);
     const batchIndices: number[] = [];
-    for (let k = batch; k < batchEnd; k++) batchIndices.push(k);
+    for (let k = batch; k < batchEnd; k++) {
+      // 跳过已下载的片段
+      if (k < alreadyDownloaded) continue;
+      batchIndices.push(k);
+    }
+
+    if (batchIndices.length === 0) continue;
 
     const batchResults = await Promise.all(
       batchIndices.map(async (i) => {

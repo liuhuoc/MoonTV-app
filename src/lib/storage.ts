@@ -57,6 +57,19 @@ export async function browserSaveSegment(taskId: string, index: number, blob: Bl
   });
 }
 
+/** 浏览器：检查片段是否已存在 */
+export async function browserSegmentExists(taskId: string, index: number): Promise<boolean> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('segments', 'readonly');
+    const store = tx.objectStore('segments');
+    const key = `${taskId}_seg${String(index).padStart(5, '0')}`;
+    const req = store.getKey(key);
+    req.onsuccess = () => { db.close(); resolve(!!req.result); };
+    req.onerror = () => { db.close(); reject(req.error); };
+  });
+}
+
 /** 浏览器：读取单个片段 */
 export async function browserReadSegment(taskId: string, index: number): Promise<ArrayBuffer> {
   const db = await openDB();
