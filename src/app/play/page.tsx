@@ -1492,10 +1492,16 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
                 });
                 hls.on(Hls.Events.LEVEL_LOADED, (_event: any, data: any) => {
                   addDebugLog(`HLS: LEVEL_LOADED, details=${data.details}`);
+                  const sc = (hls as any).streamController;
+                  addDebugLog(`HLS: before startLoad, sc.levels=${sc?.levels?.length}, sc.state=${sc?.state}, sc.levelLastLoaded=${!!sc?.levelLastLoaded}`);
                   // 在 LEVEL_LOADED 之后手动触发 startLoad
                   // 此时 levelLastLoaded 和 StreamController.levels 都已就绪
                   addDebugLog('HLS: calling startLoad() after LEVEL_LOADED');
                   hls.startLoad();
+                  addDebugLog(`HLS: after startLoad, sc.state=${sc?.state}, sc.level=${sc?.level}, nextLoadLevel=${hls.nextLoadLevel}`);
+                });
+                hls.on(Hls.Events.LEVEL_UPDATED, (_event: any, data: any) => {
+                  addDebugLog(`HLS: LEVEL_UPDATED, level=${data.level}`);
                 });
                 hls.on(Hls.Events.FRAG_LOADING, (_event: any, data: any) => {
                   addDebugLog(`HLS: FRAG_LOADING, sn=${data.frag?.sn}, url=${String(data.frag?.url || '').substring(0, 80)}`);
