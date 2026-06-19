@@ -1445,9 +1445,11 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
                   autoStartLoad: !isLocal,
 
                   /* 缓冲/内存相关 */
-                  maxBufferLength: 30,
-                  backBufferLength: 30,
-                  maxBufferSize: 60 * 1000 * 1000,
+                  // 本地视频：片段从文件系统按需加载，速度极快，使用大缓冲区避免 evict 导致回拖卡住
+                  // 在线视频：保持默认限制，防止内存占用过大
+                  maxBufferLength: isLocal ? 3600 : 30,
+                  backBufferLength: isLocal ? 3600 : 30,
+                  maxBufferSize: isLocal ? 0 : 60 * 1000 * 1000, // 0 = 不限制
 
                   /* 自定义loader */
                   loader: loaderClass,

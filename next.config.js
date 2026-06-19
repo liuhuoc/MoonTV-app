@@ -81,6 +81,47 @@ const withPWA = require('next-pwa')({
   disable: process.env.NODE_ENV === 'development' || nextConfig.output === 'export',
   register: true,
   skipWaiting: true,
+  runtimeCaching: [
+    {
+      // 缓存封面图片（doubanio.com、img9.doubanio.com 等外部图片源）
+      urlPattern: /\.(?:png|jpg|jpeg|webp|gif|svg)(\?.*)?$/i,
+      handler: 'CacheFirst',
+      options: {
+        cacheName: 'image-cache',
+        expiration: {
+          maxEntries: 500,
+          maxAgeSeconds: 30 * 24 * 60 * 60, // 30 天
+        },
+        matchOptions: {
+          ignoreVary: true,
+        },
+      },
+    },
+    {
+      // 缓存视频封面图（匹配常见的图片 CDN 域名）
+      urlPattern: ({ url }) => {
+        const imageDomains = [
+          'doubanio.com',
+          'img9.doubanio.com',
+          'img1.doubanio.com',
+          'img2.doubanio.com',
+          'img3.doubanio.com',
+          'pic2.iqiyipic.com',
+          'pic2.qiyipic.com',
+          'pic3.iqiyipic.com',
+        ];
+        return imageDomains.some(domain => url.hostname.includes(domain));
+      },
+      handler: 'CacheFirst',
+      options: {
+        cacheName: 'poster-image-cache',
+        expiration: {
+          maxEntries: 500,
+          maxAgeSeconds: 30 * 24 * 60 * 60,
+        },
+      },
+    },
+  ],
 });
 
 module.exports = withPWA(nextConfig);
