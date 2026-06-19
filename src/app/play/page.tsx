@@ -30,7 +30,7 @@ import {
 } from '@/lib/db.client';
 import { fetchVideoDetail, downstreamSearchFast } from '@/lib/downstream';
 import { SearchResult } from '@/lib/types';
-import { getVideoResolutionFromM3u8, processImageUrl } from '@/lib/utils';
+import { processImageUrl } from '@/lib/utils';
 import { addDownloadTask, getDownloadTasks, startDownload, subscribeToDownloadUpdates, type DownloadTask } from '@/lib/download';
 import Swal from 'sweetalert2';
 
@@ -181,21 +181,6 @@ function PlayPageClient() {
     null
   );
 
-  // 优选和测速开关
-  const [optimizationEnabled] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('enableOptimization');
-      if (saved !== null) {
-        try {
-          return JSON.parse(saved);
-        } catch {
-          /* ignore */
-        }
-      }
-    }
-    return true;
-  });
-
   // 保存优选时的测速结果，避免EpisodeSelector重复测速
   const [precomputedVideoInfo, setPrecomputedVideoInfo] = useState<
     Map<string, { quality: string; loadSpeed: string; pingTime: number }>
@@ -239,195 +224,9 @@ function PlayPageClient() {
   const artPlayerRef = useRef<any>(null);
   const artRef = useRef<HTMLDivElement | null>(null);
 
-  // -----------------------------------------------------------------------------
+  //  -----------------------------------------------------------------------------
   // 工具函数（Utils）
   // -----------------------------------------------------------------------------
-
-  // 播放源优选函数
-  const preferBestSource = async (
-    sources: SearchResult[]
-  ): Promise<SearchResult> => {
-    if (sources.length === 1) return sources[0];
-
-    // 将播放源均分为两批，并发测速各批，避免一次性过多请求
-    const batchSize = Math.ceil(sources.length / 2);
-    const allResults: Array<{
-      source: SearchResult;
-      testResult: { quality: string; loadSpeed: string; pingTime: number };
-    } | null> = [];
-
-    for (let start = 0; start < sources.length; start += batchSize) {
-      const batchSources = sources.slice(start, start + batchSize);
-      const batchResults = await Promise.all(
-        batchSources.map(async (source) => {
-          try {
-            // 检查是否有第一集的播放地址
-            if (!source.episodes || source.episodes.length === 0) {
-              return null;
-            }
-
-            const episodeUrl =
-              source.episodes.length > 1
-                ? source.episodes[1]
-                : source.episodes[0];
-            const testResult = await getVideoResolutionFromM3u8(episodeUrl);
-
-            return {
-              source,
-              testResult,
-            };
-          } catch (error) {
-            return null;
-          }
-        })
-      );
-      allResults.push(...batchResults);
-    }
-
-    // 等待所有测速完成，包含成功和失败的结果
-    // 保存所有测速结果到 precomputedVideoInfo，供 EpisodeSelector 使用（包含错误结果）
-    const newVideoInfoMap = new Map<
-      string,
-      {
-        quality: string;
-        loadSpeed: string;
-        pingTime: number;
-        hasError?: boolean;
-      }
-    >();
-    allResults.forEach((result, index) => {
-      const source = sources[index];
-      const sourceKey = `${source.source}-${source.id}`;
-
-      if (result) {
-        // 成功的结果
-        newVideoInfoMap.set(sourceKey, result.testResult);
-      }
-    });
-
-    // 过滤出成功的结果用于优选计算
-    const successfulResults = allResults.filter(Boolean) as Array<{
-      source: SearchResult;
-      testResult: { quality: string; loadSpeed: string; pingTime: number };
-    }>;
-
-    setPrecomputedVideoInfo(newVideoInfoMap);
-
-    if (successfulResults.length === 0) {
-      return sources[0];
-    }
-
-    // 找出所有有效速度的最大值，用于线性映射
-    const validSpeeds = successfulResults
-      .map((result) => {
-        const speedStr = result.testResult.loadSpeed;
-        if (speedStr === '未知' || speedStr === '测量中...') return 0;
-
-        const match = speedStr.match(/^(\d[\d.]+)\s*(KB\/s|MB\/s)$/);
-        if (!match) return 0;
-
-        const value = parseFloat(match[1]);
-        const unit = match[2];
-        return unit === 'MB/s' ? value * 1024 : value; // 统一转换为 KB/s
-      })
-      .filter((speed) => speed > 0);
-
-    const maxSpeed = validSpeeds.length > 0 ? Math.max(...validSpeeds) : 1024; // 默认1MB/s作为基准
-
-    // 找出所有有效延迟的最小值和最大值，用于线性映射
-    const validPings = successfulResults
-      .map((result) => result.testResult.pingTime)
-      .filter((ping) => ping > 0);
-
-    const minPing = validPings.length > 0 ? Math.min(...validPings) : 50;
-    const maxPing = validPings.length > 0 ? Math.max(...validPings) : 1000;
-
-    // 计算每个结果的评分
-    const resultsWithScore = successfulResults.map((result) => ({
-      ...result,
-      score: calculateSourceScore(
-        result.testResult,
-        maxSpeed,
-        minPing,
-        maxPing
-      ),
-    }));
-
-    // 按综合评分排序，选择最佳播放源
-    resultsWithScore.sort((a, b) => b.score - a.score);
-
-    return resultsWithScore[0].source;
-  };
-
-  // 计算播放源综合评分
-  const calculateSourceScore = (
-    testResult: {
-      quality: string;
-      loadSpeed: string;
-      pingTime: number;
-    },
-    maxSpeed: number,
-    minPing: number,
-    maxPing: number
-  ): number => {
-    let score = 0;
-
-    // 分辨率评分 (40% 权重)
-    const qualityScore = (() => {
-      switch (testResult.quality) {
-        case '4K':
-          return 100;
-        case '2K':
-          return 85;
-        case '1080p':
-          return 75;
-        case '720p':
-          return 60;
-        case '480p':
-          return 40;
-        case 'SD':
-          return 20;
-        default:
-          return 0;
-      }
-    })();
-    score += qualityScore * 0.4;
-
-    // 下载速度评分 (40% 权重) - 基于最大速度线性映射
-    const speedScore = (() => {
-      const speedStr = testResult.loadSpeed;
-      if (speedStr === '未知' || speedStr === '测量中...') return 30;
-
-      // 解析速度值
-      const match = speedStr.match(/^(\d[\d.]+)\s*(KB\/s|MB\/s)$/);
-      if (!match) return 30;
-
-      const value = parseFloat(match[1]);
-      const unit = match[2];
-      const speedKBps = unit === 'MB/s' ? value * 1024 : value;
-
-      // 基于最大速度线性映射，最高100分
-      const speedRatio = speedKBps / maxSpeed;
-      return Math.min(100, Math.max(0, speedRatio * 100));
-    })();
-    score += speedScore * 0.4;
-
-    // 网络延迟评分 (20% 权重) - 基于延迟范围线性映射
-    const pingScore = (() => {
-      const ping = testResult.pingTime;
-      if (ping <= 0) return 0; // 无效延迟给默认分
-
-      // 如果所有延迟都相同，给满分
-      if (maxPing === minPing) return 100;
-
-      // 线性映射：最低延迟=100分，最高延迟=0分
-      const pingRatio = (maxPing - ping) / (maxPing - minPing);
-      return Math.min(100, Math.max(0, pingRatio * 100));
-    })();
-    score += pingScore * 0.2;
-
-    return Math.round(score * 100) / 100; // 保留两位小数
-  };
 
   // 更新视频地址
   const updateVideoUrl = (
@@ -602,7 +401,9 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
             );
             return allResults;
           });
-        }).catch(() => {});
+        }).catch(() => {
+          // 忽略后台加载失败
+        });
 
         // 先使用快速结果
         const allResults = filterAndMergeResults(
@@ -834,7 +635,7 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
         return;
       }
 
-      let detailData: SearchResult = sourcesInfo[0];
+      const detailData: SearchResult = sourcesInfo[0];
 
       setNeedPrefer(false);
       setCurrentSource(detailData.source);
@@ -959,6 +760,16 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
 
       // 尝试跳转到当前正在播放的集数
       let targetIndex = currentEpisodeIndex;
+
+      // 获取新源详情
+      const newDetail = availableSources.find(
+        (source) => source.source === newSource && source.id === newId
+      );
+      if (!newDetail) {
+        setError('未找到匹配结果');
+        setIsVideoLoading(false);
+        return;
+      }
 
       // 如果当前集数超出新源的范围，则跳转到第一集
       if (!newDetail.episodes || targetIndex >= newDetail.episodes.length) {
@@ -1772,7 +1583,7 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
       // 监听 video 元素原生错误事件（更底层的错误捕获）
       if (artPlayerRef.current?.video) {
         const videoEl = artPlayerRef.current.video as HTMLVideoElement;
-        videoEl.addEventListener('error', (e) => {
+        videoEl.addEventListener('error', () => {
           // 视频加载错误
         });
       }
@@ -1876,31 +1687,27 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
               if (artPlayerRef.current && artPlayerRef.current.isFullscreen) {
                 // 隐藏控制栏
                 artPlayerRef.current.controls = false;
-                console.log('全屏模式下隐藏控制栏');
               }
             }, 2000);
           } else {
             // 退出全屏时，恢复正常
             try {
               await ScreenOrientation.unlock();
-              console.log('Capacitor屏幕方向解锁成功');
-            } catch (e) {
-              console.log('Capacitor屏幕解锁失败', e);
+            } catch {
               // 如果Capacitor失败，尝试使用Web API
               try {
                 if ('orientation' in screen && 'unlock' in screen.orientation) {
                   (screen.orientation as any).unlock();
-                  console.log('Web Screen Orientation API解锁成功');
                 }
-              } catch (webError) {
-                console.log('Web Screen Orientation API解锁失败', webError);
+              } catch {
+                // Web Screen Orientation API解锁失败
               }
             }
             
             // 恢复状态栏显示
             try {
               await StatusBar.show();
-            } catch (e) {
+            } catch {
               // 状态栏恢复显示失败
             }
             
@@ -1945,17 +1752,14 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
             // 进入网页全屏时，强制横屏
             try {
               await ScreenOrientation.lock({ orientation: 'landscape' });
-              console.log('Capacitor屏幕方向锁定成功');
-            } catch (e) {
-              console.log('Capacitor屏幕锁定失败，使用CSS备用', e);
+            } catch {
               // 如果Capacitor失败，尝试使用Web API
               try {
                 if ('orientation' in screen && 'lock' in screen.orientation) {
                   await (screen.orientation as any).lock('landscape');
-                  console.log('Web Screen Orientation API锁定成功');
                 }
-              } catch (webError) {
-                console.log('Web Screen Orientation API也失败', webError);
+              } catch {
+                // Web Screen Orientation API也失败
               }
             }
             
