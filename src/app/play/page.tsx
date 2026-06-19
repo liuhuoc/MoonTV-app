@@ -531,7 +531,8 @@ type LocalPlaybackCtx =
 let localPlaybackCtx: LocalPlaybackCtx | null = null;
 
 // 创建本地分段 Loader：拦截 local://segment/N URL，从磁盘读取文件
-function createLocalSegmentLoader() {
+// ctx 通过闭包传入，避免依赖模块级变量（可能被 React 重新渲染重置）
+function createLocalSegmentLoader(ctx: LocalPlaybackCtx | null) {
   class LocalSegmentLoader {
     private aborted = false;
     context: any = null;
@@ -541,7 +542,7 @@ function createLocalSegmentLoader() {
     // eslint-disable-next-line @typescript-eslint/no-empty-function, @typescript-eslint/no-unused-vars
     constructor(_config: any) {
       this.context = null;
-      console.log('[LocalLoader] 实例化');
+      console.log('[LocalLoader] 实例化, ctx:', ctx ? `${ctx.platform}` : 'null');
     }
 
     // eslint-disable-next-line @typescript-eslint/no-empty-function
@@ -555,10 +556,9 @@ function createLocalSegmentLoader() {
       console.log(`[LocalLoader] load() url=${url}`);
 
       if (url.startsWith('local://segment/')) {
-        // 延迟检查上下文（在 load() 调用时读取，避免闭包时序问题）
-        const ctx = localPlaybackCtx;
+        // 使用闭包捕获的 ctx，而不是模块级变量（后者可能被 React 重置）
         if (!ctx) {
-          console.error('[LocalLoader] localPlaybackCtx 未设置');
+          console.error('[LocalLoader] ctx 未设置（闭包中为 null）');
           callbacks.onError({ code: 500, text: '本地播放上下文未设置' }, context, null);
           return;
         }
@@ -1625,7 +1625,7 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
               let hls: Hls;
               try {
                 const customLoader = isLocalPlayback
-                  ? createLocalSegmentLoader()
+                  ? createLocalSegmentLoader(localPlaybackCtx)
                   : blockAdEnabledRef.current
                   ? CustomHlsJsLoader
                   : Hls.DefaultConfig.loader;
