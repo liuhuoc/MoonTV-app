@@ -14,17 +14,17 @@ def getVersionCode = { ->
     }
 }
 
-// 根据最近 tag 生成 versionName，无 tag 时默认 1.0
+// 根据 git commit 数量生成干净的版本号
 def getVersionName = { ->
     try {
-        def process = new ProcessBuilder('git', 'describe', '--tags', '--always')
+        def process = new ProcessBuilder('git', 'rev-list', '--count', 'HEAD')
             .directory(rootProject.projectDir)
             .start()
-        def name = process.inputStream.text.trim()
+        def code = process.inputStream.text.trim().toInteger()
         process.waitFor()
-        return name ?: "1.0"
+        return "1.0." + (code > 0 ? code : 1)
     } catch (Exception e) {
-        return "1.0"
+        return "1.0.1"
     }
 }
 

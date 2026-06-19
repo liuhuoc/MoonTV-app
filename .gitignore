@@ -46,3 +46,21 @@ src/lib/runtime.ts
 public/manifest.json
 public/sw.js
 public/workbox-*.js
+
+# android build
+/android/app/build/
+/android/.gradle/
+/android/app/build/
+/android/build/
+*.apk
+*.aab
+release/
+
+# capacitor
+/capacitor.config.json
+/android/capacitor.settings.gradle
+
+# editor / os
+.vscode/
+.idea/
+.DS_Store

@@ -21,7 +21,6 @@ const config: CapacitorConfig = {
       lock: false,
     },
     StatusBar: {
-      style: 'dark',
       overlaysWebView: false,
     },
   },
