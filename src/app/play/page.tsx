@@ -706,7 +706,7 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
       if (hasInitializedRef.current) return;
       hasInitializedRef.current = true;
 
-      // 本地文件播放：将所有 TS 分段合并成完整视频，用原生 video 直接播放
+      // 本地文件播放：使用 HLS.js 加载 M3U8 播放列表
       if (currentSource === 'local') {
         const dlTasks = getDownloadTasks();
         const dlTask = dlTasks.find(t => t.id === currentId);
@@ -731,18 +731,21 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
         try {
           setLoadingMessage('正在加载本地视频...');
 
-          const allSegments: Uint8Array[] = [];
+          const segmentBlobUrls: string[] = [];
+          let playlistContent: string;
 
           // 浏览器端：从 IndexedDB 读取所有分段
           if (dlTask.writeDirectory === 'IndexedDB') {
-            const playlistContent = await browserReadPlaylist(currentId || dlTask.id);
+            playlistContent = await browserReadPlaylist(currentId || dlTask.id);
             const segCount = (playlistContent.match(/#EXTINF:/g) || []).length;
             console.log(`[本地播放] 浏览器端分段数量: ${segCount}`);
             
             for (let i = 1; i <= segCount; i++) {
               const buf = await browserReadSegment(currentId || dlTask.id, i);
-              allSegments.push(new Uint8Array(buf));
-              console.log(`[本地播放] 读取分段 ${i}/${segCount}, ${buf.byteLength} bytes`);
+              const blob = new Blob([buf], { type: 'video/mp2t' });
+              const blobUrl = URL.createObjectURL(blob);
+              segmentBlobUrls.push(blobUrl);
+              console.log(`[本地播放] 创建分段 blob URL ${i}/${segCount}: ${blobUrl}`);
             }
           } else {
             // Capacitor 端：从 Filesystem 读取所有分段
@@ -752,11 +755,9 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
               return;
             }
             const writeDirEnum = dlTask.writeDirectory === 'Library' ? Directory.Library : Directory.Data;
-            const dirPath = dlTask.localPath.replace(/\/playlist\.m3u8$/, '');
 
             // 读取 M3U8 获取分段数量
             const result = await Filesystem.readFile({ path: dlTask.localPath, directory: writeDirEnum });
-            let playlistContent: string;
             try {
               playlistContent = atob(result.data as string);
             } catch {
@@ -766,6 +767,7 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
             const segCount = (playlistContent.match(/#EXTINF:/g) || []).length;
             console.log(`[本地播放] Capacitor 端分段数量: ${segCount}`);
 
+            const dirPath = dlTask.localPath.replace(/\/playlist\.m3u8$/, '');
             for (let i = 0; i < segCount; i++) {
               const segFileName = `seg_${String(i).padStart(5, '0')}.ts`;
               const segPath = `${dirPath}/${segFileName}`;
@@ -774,27 +776,44 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
               const bytes = atob(base64);
               const arr = new Uint8Array(bytes.length);
               for (let j = 0; j < bytes.length; j++) arr[j] = bytes.charCodeAt(j);
-              allSegments.push(arr);
-              console.log(`[本地播放] 读取分段 ${i}/${segCount}, ${arr.length} bytes`);
+              
+              const blob = new Blob([arr], { type: 'video/mp2t' });
+              const blobUrl = URL.createObjectURL(blob);
+              segmentBlobUrls.push(blobUrl);
+              console.log(`[本地播放] 创建分段 blob URL ${i + 1}/${segCount}: ${blobUrl}`);
             }
           }
 
-          // 合并所有分段
-          const totalSize = allSegments.reduce((sum, arr) => sum + arr.length, 0);
-          const merged = new Uint8Array(totalSize);
-          let offset = 0;
-          for (const arr of allSegments) {
-            merged.set(arr, offset);
-            offset += arr.length;
-          }
-          console.log(`[本地播放] 合并完成，总大小: ${totalSize} bytes`);
-
-          // 创建 blob URL
-          const blob = new Blob([merged], { type: 'video/mp2t' });
-          const blobUrl = URL.createObjectURL(blob);
-          console.log(`[本地播放] blob URL 创建成功: ${blobUrl}`);
+          // 构建 M3U8 播放列表
+          const m3u8Lines = [
+            '#EXTM3U',
+            '#EXT-X-VERSION:3',
+            '#EXT-X-TARGETDURATION:10',
+            '#EXT-X-MEDIA-SEQUENCE:0',
+          ];
           
-          setVideoUrl(blobUrl);
+          // 解析原始 M3U8 获取每个分段的时长
+          const extinfRegex = /#EXTINF:([\d.]+)/g;
+          let match;
+          let segIndex = 0;
+          while ((match = extinfRegex.exec(playlistContent)) !== null) {
+            const duration = match[1];
+            m3u8Lines.push(`#EXTINF:${duration},`);
+            m3u8Lines.push(segmentBlobUrls[segIndex]);
+            segIndex++;
+          }
+          
+          m3u8Lines.push('#EXT-X-ENDLIST');
+          const m3u8Content = m3u8Lines.join('\n');
+          
+          console.log(`[本地播放] M3U8 播放列表内容:\n${m3u8Content}`);
+          
+          // 创建 M3U8 blob URL
+          const m3u8Blob = new Blob([m3u8Content], { type: 'application/vnd.apple.mpegurl' });
+          const m3u8Url = URL.createObjectURL(m3u8Blob);
+          console.log(`[本地播放] M3U8 blob URL 创建成功: ${m3u8Url}`);
+          
+          setVideoUrl(m3u8Url);
           setLoading(false);
         } catch (e) {
           setError(`读取本地视频失败: ${(e as Error).message}`);
