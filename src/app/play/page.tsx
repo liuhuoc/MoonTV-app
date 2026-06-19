@@ -38,9 +38,17 @@ import EpisodeSelector from '@/components/EpisodeSelector';
 import PageLayout from '@/components/PageLayout';
 
 // 扩展 HTMLVideoElement 类型以支持 hls 属性
+// 本地播放上下文类型
+type LocalPlaybackCtx =
+  | { platform: 'capacitor'; dirPath: string; writeDirEnum: Directory }
+  | { platform: 'browser'; taskId: string };
+
 declare global {
   interface HTMLVideoElement {
     hls?: any;
+  }
+  interface Window {
+    __localPlaybackCtx?: LocalPlaybackCtx | null;
   }
 }
 
@@ -524,15 +532,9 @@ function PlayPageClient() {
     return `${minutes}分${remainingSeconds.toString().padStart(2, '0')}秒`;
   };
 
-// 本地播放上下文，由 playLocalVideo 函数设置
-type LocalPlaybackCtx =
-  | { platform: 'capacitor'; dirPath: string; writeDirEnum: Directory }
-  | { platform: 'browser'; taskId: string };
-let localPlaybackCtx: LocalPlaybackCtx | null = null;
-
 // 创建本地分段 Loader：拦截 local://segment/N URL，从磁盘读取文件
-// ctx 通过闭包传入，避免依赖模块级变量（可能被 React 重新渲染重置）
-function createLocalSegmentLoader(ctx: LocalPlaybackCtx | null) {
+// 从 window.__localPlaybackCtx 读取上下文（window 是真正全局的，不会被任何机制重置）
+function createLocalSegmentLoader() {
   class LocalSegmentLoader {
     private aborted = false;
     context: any = null;
@@ -542,7 +544,7 @@ function createLocalSegmentLoader(ctx: LocalPlaybackCtx | null) {
     // eslint-disable-next-line @typescript-eslint/no-empty-function, @typescript-eslint/no-unused-vars
     constructor(_config: any) {
       this.context = null;
-      console.log('[LocalLoader] 实例化, ctx:', ctx ? `${ctx.platform}` : 'null');
+      console.log('[LocalLoader] 实例化');
     }
 
     // eslint-disable-next-line @typescript-eslint/no-empty-function
@@ -556,9 +558,10 @@ function createLocalSegmentLoader(ctx: LocalPlaybackCtx | null) {
       console.log(`[LocalLoader] load() url=${url}`);
 
       if (url.startsWith('local://segment/')) {
-        // 使用闭包捕获的 ctx，而不是模块级变量（后者可能被 React 重置）
+        // 从 window 上读取上下文（真正全局，不受 React 生命周期影响）
+        const ctx = window.__localPlaybackCtx;
         if (!ctx) {
-          console.error('[LocalLoader] ctx 未设置（闭包中为 null）');
+          console.error('[LocalLoader] window.__localPlaybackCtx 未设置');
           callbacks.onError({ code: 500, text: '本地播放上下文未设置' }, context, null);
           return;
         }
@@ -854,8 +857,8 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
 
           // 浏览器端：从 IndexedDB 读取
           if (dlTask.writeDirectory === 'IndexedDB') {
-            localPlaybackCtx = { platform: 'browser', taskId: currentId || dlTask.id };
-            console.log('[initAll] localPlaybackCtx 已设置 (browser):', localPlaybackCtx);
+            window.__localPlaybackCtx = { platform: 'browser', taskId: currentId || dlTask.id };
+            console.log('[initAll] window.__localPlaybackCtx 已设置 (browser):', window.__localPlaybackCtx);
             const playlistContent = await browserReadPlaylist(currentId || dlTask.id);
             console.log(
               `本地播放诊断:\n  M3U8内容前200字符:\n${playlistContent.substring(0, 200)}`
@@ -876,8 +879,8 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
           }
           const writeDirEnum = dlTask.writeDirectory === 'Library' ? Directory.Library : Directory.Data;
           const dirPath = dlTask.localPath.replace(/\/playlist\.m3u8$/, '');
-          localPlaybackCtx = { platform: 'capacitor', dirPath, writeDirEnum };
-          console.log('[initAll] localPlaybackCtx 已设置 (capacitor):', localPlaybackCtx);
+          window.__localPlaybackCtx = { platform: 'capacitor', dirPath, writeDirEnum };
+          console.log('[initAll] window.__localPlaybackCtx 已设置 (capacitor):', window.__localPlaybackCtx);
 
           // 读取 M3U8 播放列表
           const result = await Filesystem.readFile({ path: dlTask.localPath, directory: writeDirEnum });
@@ -1625,7 +1628,7 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
               let hls: Hls;
               try {
                 const customLoader = isLocalPlayback
-                  ? createLocalSegmentLoader(localPlaybackCtx)
+                  ? createLocalSegmentLoader()
                   : blockAdEnabledRef.current
                   ? CustomHlsJsLoader
                   : Hls.DefaultConfig.loader;
