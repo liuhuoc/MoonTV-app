@@ -64,42 +64,38 @@ function HomeClient() {
         setLoading(true);
         addGlobalDebugLog('首页: 开始请求豆瓣数据...');
 
-        const results = await Promise.allSettled([
-          getDoubanCategories({ kind: 'movie', category: '热门', type: '全部' }),
+        // 先请求 m.douban.com（tv）接口，它们不限流
+        const [tvResult, varietyResult] = await Promise.allSettled([
           getDoubanCategories({ kind: 'tv', category: 'tv', type: 'tv' }),
           getDoubanCategories({ kind: 'tv', category: 'show', type: 'show' }),
-          getDoubanCategories({ kind: 'movie', category: '热门', type: '日本' }),
         ]);
 
-        const [moviesResult, tvResult, varietyResult, animationResult] = results;
+        // movie.douban.com 容易限流，串行请求并加延迟
+        const moviesResult = await Promise.resolve(getDoubanCategories({ kind: 'movie', category: '热门', type: '全部' }));
+        await new Promise(r => setTimeout(r, 300)); // 间隔 300ms 避免触发限流
+        const animationResult = await Promise.resolve(getDoubanCategories({ kind: 'movie', category: '热门', type: '日本' }));
 
-        const labels = ['热门电影', '热门剧集', '热门综艺', '热门动漫'];
-        const resultsList = [moviesResult, tvResult, varietyResult, animationResult];
-        resultsList.forEach((r, i) => {
-          const status = r.status === 'fulfilled' ? 'OK' : 'FAIL';
-          const count = r.status === 'fulfilled' && r.value.code === 200 ? r.value.list.length : 0;
-          const err = r.status === 'rejected' ? String(r.reason).substring(0, 60) : (r.value.code !== 200 ? r.value.message : '');
-          addGlobalDebugLog(`首页: ${labels[i]} ${status} count=${count}${err ? ` err=${err}` : ''}`);
-        });
+        // movies/animation 是直接返回值，tv/variety 是 PromiseSettledResult
+        const movieOk = moviesResult.code === 200;
+        const tvOk = tvResult.status === 'fulfilled' && tvResult.value.code === 200;
+        const varietyOk = varietyResult.status === 'fulfilled' && varietyResult.value.code === 200;
+        const animationOk = animationResult.code === 200;
 
-        if (moviesResult.status === 'fulfilled' && moviesResult.value.code === 200) {
-          setHotMovies(moviesResult.value.list);
-        }
-        if (tvResult.status === 'fulfilled' && tvResult.value.code === 200) {
-          setHotTvShows(tvResult.value.list);
-        }
-        if (varietyResult.status === 'fulfilled' && varietyResult.value.code === 200) {
-          setHotVarietyShows(varietyResult.value.list);
-        }
-        if (animationResult.status === 'fulfilled' && animationResult.value.code === 200) {
-          setHotAnimation(animationResult.value.list);
-        }
+        addGlobalDebugLog(`首页: 热门电影 ${movieOk ? 'OK' : 'FAIL'} count=${movieOk ? moviesResult.list.length : 0}${!movieOk ? ' err=' + moviesResult.message : ''}`);
+        addGlobalDebugLog(`首页: 热门剧集 ${tvOk ? 'OK' : 'FAIL'} count=${tvOk ? tvResult.value.list.length : 0}`);
+        addGlobalDebugLog(`首页: 热门综艺 ${varietyOk ? 'OK' : 'FAIL'} count=${varietyOk ? varietyResult.value.list.length : 0}`);
+        addGlobalDebugLog(`首页: 热门动漫 ${animationOk ? 'OK' : 'FAIL'} count=${animationOk ? animationResult.list.length : 0}${!animationOk ? ' err=' + animationResult.message : ''}`);
+
+        if (movieOk) setHotMovies(moviesResult.list);
+        if (tvOk) setHotTvShows(tvResult.value.list);
+        if (varietyOk) setHotVarietyShows(varietyResult.value.list);
+        if (animationOk) setHotAnimation(animationResult.list);
 
         __categoryCache = {
-          movies: moviesResult.status === 'fulfilled' && moviesResult.value.code === 200 ? moviesResult.value.list : [],
-          tv: tvResult.status === 'fulfilled' && tvResult.value.code === 200 ? tvResult.value.list : [],
-          variety: varietyResult.status === 'fulfilled' && varietyResult.value.code === 200 ? varietyResult.value.list : [],
-          anime: animationResult.status === 'fulfilled' && animationResult.value.code === 200 ? animationResult.value.list : [],
+          movies: movieOk ? moviesResult.list : [],
+          tv: tvOk ? tvResult.value.list : [],
+          variety: varietyOk ? varietyResult.value.list : [],
+          anime: animationOk ? animationResult.list : [],
           time: Date.now(),
         };
       } catch (error) {

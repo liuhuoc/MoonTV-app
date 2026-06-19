@@ -396,23 +396,38 @@ export async function getDoubanCategories(
     } else if (isMovieTagsFilter || isAnimationFilter) {
       const doubanData = responseJson as any;
       const dataArray = doubanData?.data;
-      // 豆瓣 API 响应格式可能变化，记录实际结构以便调试
+      // 豆瓣 API 可能返回限流响应：{msg: "检测到有异常请求...", r: 1}
       if (!Array.isArray(dataArray)) {
-        const keys = Object.keys(responseJson || {}).join(', ');
-        const rValue = doubanData?.r;
-        const rType = typeof rValue;
-        const rIsArray = Array.isArray(rValue);
-        const rLen = rIsArray ? rValue.length : (typeof rValue === 'object' && rValue !== null ? Object.keys(rValue).join(',') : String(rValue).substring(0, 100));
-        addGlobalDebugLog(`豆瓣API: ${params.kind}/${params.category}/${params.type} keys=[${keys}] r.type=${rType} r.isArray=${rIsArray} r.len=${rLen}`);
-        // 尝试兼容各种格式
-        if (rIsArray) {
-          list = rValue.slice(0, pageLimit).map((item: any) => ({
-            id: item.id,
-            title: item.title,
-            poster: item.cover || item.pic?.normal || item.pic?.large || '',
-            rate: item.rate,
-            year: year && year !== '全部' ? year : '',
-          }));
+        if (doubanData?.r !== undefined && doubanData?.msg) {
+          // 被限流了，等 1~2 秒重试一次
+          addGlobalDebugLog(`豆瓣API: ${params.kind}/${params.category}/${params.type} 被限流，1.5s后重试...`);
+          await new Promise(r => setTimeout(r, 1500));
+          const retryResp = await nativeFetch(target, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+              Referer: 'https://movie.douban.com/explore',
+              Accept: 'application/json, text/plain, */*',
+            },
+            timeout: 10000,
+          }).catch(() => null);
+          if (retryResp && retryResp.ok) {
+            const retryJson = await retryResp.json() as any;
+            const retryData = retryJson?.data;
+            if (Array.isArray(retryData)) {
+              addGlobalDebugLog(`豆瓣API: ${params.kind}/${params.category}/${params.type} 重试成功 count=${retryData.length}`);
+              list = retryData.slice(0, pageLimit).map((item: any) => ({
+                id: item.id,
+                title: item.title,
+                poster: item.cover,
+                rate: item.rate,
+                year: year && year !== '全部' ? year : '',
+              }));
+            } else {
+              list = [];
+            }
+          } else {
+            list = [];
+          }
         } else if (Array.isArray(responseJson)) {
           list = responseJson.slice(0, pageLimit).map((item: any) => ({
             id: item.id,
