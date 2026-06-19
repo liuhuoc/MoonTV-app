@@ -1481,6 +1481,19 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
 
                 // 事件处理器必须在 loadSource 之前注册
                 // 因为 manifest 加载在 loadSource 内部同步完成
+
+                hls.on(Hls.Events.MEDIA_ATTACHING, () => {
+                  addDebugLog('HLS: MEDIA_ATTACHING');
+                });
+                hls.on(Hls.Events.MEDIA_ATTACHED, () => {
+                  addDebugLog('HLS: MEDIA_ATTACHED');
+                });
+                hls.on(Hls.Events.MANIFEST_LOADING, () => {
+                  addDebugLog('HLS: MANIFEST_LOADING');
+                });
+                hls.on(Hls.Events.MANIFEST_LOADED, () => {
+                  addDebugLog('HLS: MANIFEST_LOADED');
+                });
                 hls.on(Hls.Events.MANIFEST_PARSED, (_event: any, data: any) => {
                   const levels = data.levels;
                   const firstLevel = levels?.[0];
@@ -1490,15 +1503,22 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
                     addDebugLog(`HLS: first frag relurl=${frags[0].relurl}, url=${String(frags[0].url || '').substring(0, 80)}`);
                   }
                 });
+                hls.on(Hls.Events.LEVEL_LOADING, (_event: any, data: any) => {
+                  addDebugLog(`HLS: LEVEL_LOADING, level=${data.level}`);
+                });
                 hls.on(Hls.Events.LEVEL_LOADED, (_event: any, data: any) => {
-                  addDebugLog(`HLS: LEVEL_LOADED, details=${data.details}`);
+                  addDebugLog(`HLS: LEVEL_LOADED, level=${data.level}, details=${!!data.details}`);
                   const sc = (hls as any).streamController;
-                  addDebugLog(`HLS: before startLoad, sc.levels=${sc?.levels?.length}, sc.state=${sc?.state}, sc.levelLastLoaded=${!!sc?.levelLastLoaded}`);
-                  // 在 LEVEL_LOADED 之后手动触发 startLoad
-                  // 此时 levelLastLoaded 和 StreamController.levels 都已就绪
-                  addDebugLog('HLS: calling startLoad() after LEVEL_LOADED');
+                  addDebugLog(`HLS: state check — sc.levels=${sc?.levels?.length}, sc.state=${sc?.state}, sc.levelLastLoaded=${!!sc?.levelLastLoaded}, sc.buffering=${sc?.buffering}, hls.levels=${hls.levels?.length}`);
+                  addDebugLog('HLS: calling startLoad() now');
                   hls.startLoad();
-                  addDebugLog(`HLS: after startLoad, sc.state=${sc?.state}, sc.level=${sc?.level}, nextLoadLevel=${hls.nextLoadLevel}`);
+                  addDebugLog(`HLS: after startLoad — sc.state=${sc?.state}, sc.level=${sc?.level}, nextLoadLevel=${hls.nextLoadLevel}, hls.started=${(hls as any).started}`);
+                });
+                hls.on(Hls.Events.LEVEL_SWITCHING, (_event: any, data: any) => {
+                  addDebugLog(`HLS: LEVEL_SWITCHING, level=${data.level}`);
+                });
+                hls.on(Hls.Events.LEVEL_SWITCHED, (_event: any, data: any) => {
+                  addDebugLog(`HLS: LEVEL_SWITCHED, level=${data.level}`);
                 });
                 hls.on(Hls.Events.LEVEL_UPDATED, (_event: any, data: any) => {
                   addDebugLog(`HLS: LEVEL_UPDATED, level=${data.level}`);
@@ -1512,22 +1532,35 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
                 hls.on(Hls.Events.FRAG_BUFFERED, (_event: any, data: any) => {
                   addDebugLog(`HLS: FRAG_BUFFERED, sn=${data.frag?.sn}`);
                 });
+                hls.on(Hls.Events.FRAG_PARSED, (_event: any, data: any) => {
+                  addDebugLog(`HLS: FRAG_PARSED, sn=${data.frag?.sn}`);
+                });
                 hls.on(Hls.Events.BUFFER_CREATED, (_event: any, data: any) => {
                   addDebugLog(`HLS: BUFFER_CREATED, tracks=${data.tracks ? Object.keys(data.tracks) : 'none'}`);
                 });
                 hls.on(Hls.Events.BUFFER_APPENDING, (_event: any, data: any) => {
                   addDebugLog(`HLS: BUFFER_APPENDING, type=${data.type}, size=${data.data?.byteLength || data.data?.length}`);
                 });
+                hls.on(Hls.Events.BUFFER_APPENDED, (_event: any, data: any) => {
+                  addDebugLog(`HLS: BUFFER_APPENDED, type=${data.type}`);
+                });
+                hls.on(Hls.Events.BUFFER_CODECS, (_event: any, data: any) => {
+                  addDebugLog(`HLS: BUFFER_CODECS, audio=${data.audioCodec}, video=${data.videoCodec}`);
+                });
+                hls.on(Hls.Events.BUFFER_FLUSHING, (_event: any, data: any) => {
+                  addDebugLog(`HLS: BUFFER_FLUSHING, type=${data.type}`);
+                });
+                hls.on(Hls.Events.BUFFER_EOS, (_event: any, data: any) => {
+                  addDebugLog(`HLS: BUFFER_EOS, type=${data.type}`);
+                });
 
                 hls.on(Hls.Events.ERROR, function (event: any, data: any) {
                   if (data.details === 'bufferFullError') {
                     return;
                   }
-
                   const errInfo = `HLS Error [${data.type}] ${data.details}`;
                   const urlInfo = data.url ? ` URL: ${data.url}` : '';
                   addDebugLog(`${errInfo}${urlInfo}${data.fatal ? ' FATAL' : ''}`);
-
                   if (data.fatal) {
                     switch (data.type) {
                       case Hls.ErrorTypes.NETWORK_ERROR:
@@ -1553,6 +1586,18 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
 
                 hls.loadSource(url);
                 addDebugLog('customType: loadSource called');
+
+                // 持续监控：每 500ms 打印一次 HLS 内部状态，持续 10s
+                let monitorCount = 0;
+                const monitorTimer = setInterval(() => {
+                  const sc = (hls as any).streamController;
+                  monitorCount++;
+                  addDebugLog(`HLS poll#${monitorCount}: sc.state=${sc?.state}, sc.level=${sc?.level}, sc.levels=${sc?.levels?.length}, sc.levelLastLoaded=${!!sc?.levelLastLoaded}, sc.buffering=${sc?.buffering}, hls.started=${(hls as any).started}, hls.levels=${hls.levels?.length}, nextLoadLevel=${hls.nextLoadLevel}, media.readyState=${video.readyState}`);
+                  if (monitorCount >= 20) {
+                    clearInterval(monitorTimer);
+                    addDebugLog('HLS poll: stopped monitoring');
+                  }
+                }, 500);
               } catch (e) {
                 addDebugLog(`customType: attachMedia/loadSource failed: ${(e as Error).message}`);
                 return;
