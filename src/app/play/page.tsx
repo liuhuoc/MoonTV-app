@@ -516,84 +516,117 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
         } as any);
 
         try {
-          setLoadingMessage('正在加载本地视频...');
+          setLoadingMessage('正在准备本地视频...');
 
-          const segmentBlobUrls: string[] = [];
+          // 优化：按需加载分段，避免一次性加载所有数据
+          const segmentCache = new Map<number, string>();
+          const segmentDurations: number[] = [];
           let playlistContent: string;
+          let dirPath: string;
+          let writeDirEnum: any;
 
-          // 浏览器端：从 IndexedDB 读取所有分段
+          // 读取 M3U8 获取分段信息
           if (dlTask.writeDirectory === 'IndexedDB') {
             playlistContent = await browserReadPlaylist(currentId || dlTask.id);
-            const segCount = (playlistContent.match(/#EXTINF:/g) || []).length;
-            
-            for (let i = 1; i <= segCount; i++) {
-              const buf = await browserReadSegment(currentId || dlTask.id, i);
-              const blob = new Blob([buf], { type: 'video/mp2t' });
-              const blobUrl = URL.createObjectURL(blob);
-              segmentBlobUrls.push(blobUrl);
-            }
           } else {
-            // Capacitor 端：从 Filesystem 读取所有分段
             if (!dlTask.writeDirectory) {
               setError('已下载文件信息不完整，请重新下载');
               setLoading(false);
               return;
             }
-            const writeDirEnum = dlTask.writeDirectory === 'Library' ? Directory.Library : Directory.Data;
-
-            // 读取 M3U8 获取分段数量
+            writeDirEnum = dlTask.writeDirectory === 'Library' ? Directory.Library : Directory.Data;
             const result = await Filesystem.readFile({ path: dlTask.localPath, directory: writeDirEnum });
             try {
               playlistContent = atob(result.data as string);
             } catch {
               playlistContent = result.data as string;
             }
+            dirPath = dlTask.localPath.replace(/\/playlist\.m3u8$/, '');
+          }
 
-            const segCount = (playlistContent.match(/#EXTINF:/g) || []).length;
+          // 解析 M3U8 获取每个分段的时长
+          const extinfRegex = /#EXTINF:([\d.]+)/g;
+          let match;
+          while ((match = extinfRegex.exec(playlistContent)) !== null) {
+            const duration = parseFloat(match[1]);
+            segmentDurations.push(duration);
+          }
 
-            const dirPath = dlTask.localPath.replace(/\/playlist\.m3u8$/, '');
-            for (let i = 0; i < segCount; i++) {
-              const segFileName = `seg_${String(i).padStart(5, '0')}.ts`;
+          const segCount = segmentDurations.length;
+          if (segCount === 0) {
+            setError('视频分段信息不完整');
+            setLoading(false);
+            return;
+          }
+
+          // 创建按需加载的分段获取函数
+          const loadSegment = async (index: number): Promise<string> => {
+            if (segmentCache.has(index)) {
+              return segmentCache.get(index)!;
+            }
+
+            let blobUrl: string;
+            const segFileName = `seg_${String(index).padStart(5, '0')}.ts`;
+
+            if (dlTask.writeDirectory === 'IndexedDB') {
+              const buf = await browserReadSegment(currentId || dlTask.id, index + 1);
+              const blob = new Blob([buf], { type: 'video/mp2t' });
+              blobUrl = URL.createObjectURL(blob);
+            } else {
               const segPath = `${dirPath}/${segFileName}`;
               const segResult = await Filesystem.readFile({ path: segPath, directory: writeDirEnum });
               const base64 = segResult.data as string;
               const bytes = atob(base64);
               const arr = new Uint8Array(bytes.length);
               for (let j = 0; j < bytes.length; j++) arr[j] = bytes.charCodeAt(j);
-              
               const blob = new Blob([arr], { type: 'video/mp2t' });
-              const blobUrl = URL.createObjectURL(blob);
-              segmentBlobUrls.push(blobUrl);
+              blobUrl = URL.createObjectURL(blob);
             }
-          }
 
-          // 构建 M3U8 播放列表
-          const m3u8Lines = [
-            '#EXTM3U',
-            '#EXT-X-VERSION:3',
-            '#EXT-X-TARGETDURATION:10',
-            '#EXT-X-MEDIA-SEQUENCE:0',
-          ];
-          
-          // 解析原始 M3U8 获取每个分段的时长
-          const extinfRegex = /#EXTINF:([\d.]+)/g;
-          let match;
-          let segIndex = 0;
-          while ((match = extinfRegex.exec(playlistContent)) !== null) {
-            const duration = match[1];
-            m3u8Lines.push(`#EXTINF:${duration},`);
-            m3u8Lines.push(segmentBlobUrls[segIndex]);
-            segIndex++;
-          }
-          
-          m3u8Lines.push('#EXT-X-ENDLIST');
-          const m3u8Content = m3u8Lines.join('\n');
-          
-          // 创建 M3U8 blob URL
+            segmentCache.set(index, blobUrl);
+            return blobUrl;
+          };
+
+          // 预加载前3个分段以加快启动速度
+          setLoadingMessage('正在加载视频数据...');
+          const preloadCount = Math.min(3, segCount);
+          await Promise.all(Array.from({ length: preloadCount }, (_, i) => loadSegment(i)));
+
+          // 构建 M3U8 播放列表，使用 blob URL
+          const buildM3U8 = async () => {
+            const lines = [
+              '#EXTM3U',
+              '#EXT-X-VERSION:3',
+              `#EXT-X-TARGETDURATION:${Math.ceil(Math.max(...segmentDurations))}`,
+              '#EXT-X-MEDIA-SEQUENCE:0',
+              '#EXT-X-PLAYLIST-TYPE:VOD',
+            ];
+            
+            for (let i = 0; i < segCount; i++) {
+              const blobUrl = await loadSegment(i);
+              lines.push(`#EXTINF:${segmentDurations[i].toFixed(3)},`);
+              lines.push(blobUrl);
+            }
+            
+            lines.push('#EXT-X-ENDLIST');
+            return lines.join('\n');
+          };
+
+          const m3u8Content = await buildM3U8();
           const m3u8Blob = new Blob([m3u8Content], { type: 'application/vnd.apple.mpegurl' });
           const m3u8Url = URL.createObjectURL(m3u8Blob);
           
+          // 保存清理函数
+          const cleanup = () => {
+            segmentCache.forEach(url => URL.revokeObjectURL(url));
+            URL.revokeObjectURL(m3u8Url);
+          };
+          
           setVideoUrl(m3u8Url);
+          
+          // 保存清理函数到 ref
+          (window as any).__localVideoCleanup = cleanup;
+          
           setLoading(false);
         } catch (e) {
           setError(`读取本地视频失败: ${(e as Error).message}`);
