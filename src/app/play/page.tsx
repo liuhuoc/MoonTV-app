@@ -1497,10 +1497,12 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
                 hls.on(Hls.Events.MANIFEST_LOADED, () => {
                   addDebugLog('HLS: MANIFEST_LOADED');
                 });
+                let savedLevels: any = null;
                 hls.on(Hls.Events.MANIFEST_PARSED, (_event: any, data: any) => {
                   const levels = data.levels;
                   const firstLevel = levels?.[0];
                   const frags = firstLevel?.details?.fragments;
+                  savedLevels = levels; // 保存 levels，等 MANIFEST_LOADING 监听器全部执行完后再恢复
                   addDebugLog(`HLS: MANIFEST_PARSED, levels=${levels?.length}, frags=${frags?.length}`);
                   if (frags && frags.length > 0) {
                     addDebugLog(`HLS: first frag relurl=${frags[0].relurl}, url=${String(frags[0].url || '').substring(0, 80)}`);
@@ -1511,11 +1513,6 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
                 });
                 hls.on(Hls.Events.LEVEL_LOADED, (_event: any, data: any) => {
                   addDebugLog(`HLS: LEVEL_LOADED, level=${data.level}, details=${!!data.details}`);
-                  const sc = (hls as any).streamController;
-                  addDebugLog(`HLS: state check — sc.levels=${sc?.levels?.length}, sc.state=${sc?.state}, sc.levelLastLoaded=${!!sc?.levelLastLoaded}, sc.buffering=${sc?.buffering}, hls.levels=${hls.levels?.length}`);
-                  addDebugLog('HLS: calling startLoad() now');
-                  hls.startLoad();
-                  addDebugLog(`HLS: after startLoad — sc.state=${sc?.state}, sc.level=${sc?.level}, nextLoadLevel=${hls.nextLoadLevel}, hls.started=${(hls as any).started}`);
                 });
                 hls.on(Hls.Events.LEVEL_SWITCHING, (_event: any, data: any) => {
                   addDebugLog(`HLS: LEVEL_SWITCHING, level=${data.level}`);
@@ -1589,6 +1586,27 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
 
                 hls.loadSource(url);
                 addDebugLog('customType: loadSource called');
+
+                // 根因：MANIFEST_LOADING 监听器执行顺序导致
+                // 1. PlaylistLoader.onManifestLoading → 同步加载 manifest → sc.levels 被设置
+                // 2. LevelController.onManifestLoading → _levels = []
+                // 3. BaseStreamController.onManifestLoading → sc.levels = null (重置!)
+                // 所以必须在所有 MANIFEST_LOADING 监听器执行完后，恢复状态再调用 startLoad
+                setTimeout(() => {
+                  const sc = (hls as any).streamController;
+                  const lc = (hls as any).levelController;
+                  if (savedLevels && savedLevels.length > 0) {
+                    // 恢复被 onManifestLoading 重置的状态
+                    sc.levels = savedLevels;
+                    lc._levels = savedLevels;
+                    sc.levelLastLoaded = savedLevels[0];
+                    addDebugLog(`HLS: state restored, sc.levels=${sc.levels?.length}, sc.levelLastLoaded=${!!sc.levelLastLoaded}, lc._levels=${lc._levels?.length}`);
+                    hls.startLoad();
+                    addDebugLog(`HLS: startLoad() called, sc.state=${sc.state}, hls.started=${(hls as any).started}`);
+                  } else {
+                    addDebugLog('HLS: no savedLevels, startLoad skipped');
+                  }
+                }, 0);
 
                 // 持续监控：每 500ms 打印一次 HLS 内部状态，持续 10s
                 let monitorCount = 0;
