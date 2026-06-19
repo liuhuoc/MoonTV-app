@@ -29,6 +29,15 @@ export default function DebugConsole() {
     clearGlobalDebugLogs();
   }, []);
 
+  const handleCopy = useCallback(() => {
+    const text = logs.map(l => `${l.time} ${l.msg}`).join('\n');
+    navigator.clipboard.writeText(text).then(() => {
+      // brief feedback
+    }).catch(() => {
+      // fallback
+    });
+  }, [logs]);
+
   return (
     <>
       <button
@@ -43,12 +52,20 @@ export default function DebugConsole() {
         <div className='fixed bottom-16 right-4 z-[9998] w-96 max-h-96 bg-gray-900/95 border border-gray-600 rounded-xl shadow-2xl flex flex-col overflow-hidden'>
           <div className='flex items-center justify-between px-3 py-2 bg-gray-800 border-b border-gray-700'>
             <span className='text-xs font-mono text-green-400'>Debug Console</span>
-            <button
-              onClick={handleClear}
-              className='text-xs text-gray-400 hover:text-white px-2 py-0.5 rounded'
-            >
-              清空
-            </button>
+            <div className='flex items-center gap-2'>
+              <button
+                onClick={handleCopy}
+                className='text-xs text-gray-400 hover:text-white px-2 py-0.5 rounded'
+              >
+                复制
+              </button>
+              <button
+                onClick={handleClear}
+                className='text-xs text-gray-400 hover:text-white px-2 py-0.5 rounded'
+              >
+                清空
+              </button>
+            </div>
           </div>
           <div
             ref={scrollRef}

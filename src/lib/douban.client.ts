@@ -394,22 +394,34 @@ export async function getDoubanCategories(
         year: item.card_subtitle?.match(/(\d{4})/)?.[1] || '',
       }));
     } else if (isMovieTagsFilter || isAnimationFilter) {
-      const doubanData = responseJson as {
-        data: Array<{
-          id: string;
-          title: string;
-          cover: string;
-          rate: string;
-        }>;
-      };
-      console.log('[douban] 解析后 data 数量:', doubanData.data?.length, 'pageLimit:', pageLimit);
-      list = doubanData.data.slice(0, pageLimit).map((item) => ({
-        id: item.id,
-        title: item.title,
-        poster: item.cover,
-        rate: item.rate,
-        year: year && year !== '全部' ? year : '',
-      }));
+      const doubanData = responseJson as any;
+      const dataArray = doubanData?.data;
+      // 豆瓣 API 响应格式可能变化，记录实际结构以便调试
+      if (!Array.isArray(dataArray)) {
+        const keys = Object.keys(responseJson || {}).join(', ');
+        addGlobalDebugLog(`豆瓣API: ${params.kind}/${params.category}/${params.type} 响应格式异常 keys=[${keys}] typeof.data=${typeof dataArray}`);
+        // 尝试兼容：如果 data 不存在，可能直接返回数组
+        if (Array.isArray(responseJson)) {
+          list = responseJson.slice(0, pageLimit).map((item: any) => ({
+            id: item.id,
+            title: item.title,
+            poster: item.cover,
+            rate: item.rate,
+            year: year && year !== '全部' ? year : '',
+          }));
+        } else {
+          list = [];
+        }
+      } else {
+        addGlobalDebugLog(`豆瓣API: ${params.kind}/${params.category}/${params.type} 解析 data.length=${dataArray.length}`);
+        list = dataArray.slice(0, pageLimit).map((item: any) => ({
+          id: item.id,
+          title: item.title,
+          poster: item.cover,
+          rate: item.rate,
+          year: year && year !== '全部' ? year : '',
+        }));
+      }
     } else {
       const doubanData = responseJson as DoubanCategoryApiResponse;
       list = doubanData.items.map((item) => ({
