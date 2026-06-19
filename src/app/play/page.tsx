@@ -1477,63 +1477,65 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
               try {
                 hls.attachMedia(video);
                 addDebugLog('customType: attachMedia done');
+                video.hls = hls;
+
+                // 事件处理器必须在 loadSource 之前注册
+                // 因为 manifest 加载在 loadSource 内部同步完成
+                hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                  addDebugLog(`HLS: MANIFEST_PARSED`);
+                });
+                hls.on(Hls.Events.LEVEL_LOADED, (_event: any, data: any) => {
+                  addDebugLog(`HLS: LEVEL_LOADED, details=${data.details}`);
+                });
+                hls.on(Hls.Events.FRAG_LOADING, (_event: any, data: any) => {
+                  addDebugLog(`HLS: FRAG_LOADING, sn=${data.frag?.sn}, url=${String(data.frag?.url || '').substring(0, 60)}`);
+                });
+                hls.on(Hls.Events.FRAG_LOADED, (_event: any, data: any) => {
+                  addDebugLog(`HLS: FRAG_LOADED, sn=${data.frag?.sn}`);
+                });
+                hls.on(Hls.Events.FRAG_BUFFERED, (_event: any, data: any) => {
+                  addDebugLog(`HLS: FRAG_BUFFERED, sn=${data.frag?.sn}`);
+                });
+
+                hls.on(Hls.Events.ERROR, function (event: any, data: any) {
+                  if (data.details === 'bufferFullError') {
+                    return;
+                  }
+
+                  const errInfo = `HLS Error [${data.type}] ${data.details}`;
+                  const urlInfo = data.url ? ` URL: ${data.url}` : '';
+                  addDebugLog(`${errInfo}${urlInfo}${data.fatal ? ' FATAL' : ''}`);
+
+                  if (data.fatal) {
+                    switch (data.type) {
+                      case Hls.ErrorTypes.NETWORK_ERROR:
+                        hls.startLoad();
+                        break;
+                      case Hls.ErrorTypes.MEDIA_ERROR:
+                        hls.recoverMediaError();
+                        setTimeout(() => {
+                          if (video && !video.paused) {
+                            video.pause();
+                            setTimeout(() => {
+                              video.play().catch(() => { /* ignore */ });
+                            }, 100);
+                          }
+                        }, 500);
+                        break;
+                      default:
+                        hls.destroy();
+                        break;
+                    }
+                  }
+                });
+
                 hls.loadSource(url);
                 addDebugLog('customType: loadSource called');
               } catch (e) {
                 addDebugLog(`customType: attachMedia/loadSource failed: ${(e as Error).message}`);
                 return;
               }
-              video.hls = hls;
-
               ensureVideoSource(video, url);
-
-              hls.on(Hls.Events.MANIFEST_PARSED, () => {
-                addDebugLog(`HLS: MANIFEST_PARSED`);
-              });
-              hls.on(Hls.Events.LEVEL_LOADED, (_event: any, data: any) => {
-                addDebugLog(`HLS: LEVEL_LOADED, details=${data.details}`);
-              });
-              hls.on(Hls.Events.FRAG_LOADING, (_event: any, data: any) => {
-                addDebugLog(`HLS: FRAG_LOADING, sn=${data.frag?.sn}, url=${String(data.frag?.url || '').substring(0, 60)}`);
-              });
-              hls.on(Hls.Events.FRAG_LOADED, (_event: any, data: any) => {
-                addDebugLog(`HLS: FRAG_LOADED, sn=${data.frag?.sn}`);
-              });
-              hls.on(Hls.Events.FRAG_BUFFERED, (_event: any, data: any) => {
-                addDebugLog(`HLS: FRAG_BUFFERED, sn=${data.frag?.sn}`);
-              });
-
-              hls.on(Hls.Events.ERROR, function (event: any, data: any) {
-                if (data.details === 'bufferFullError') {
-                  return;
-                }
-
-                const errInfo = `HLS Error [${data.type}] ${data.details}`;
-                const urlInfo = data.url ? ` URL: ${data.url}` : '';
-                addDebugLog(`${errInfo}${urlInfo}${data.fatal ? ' FATAL' : ''}`);
-
-                if (data.fatal) {
-                  switch (data.type) {
-                    case Hls.ErrorTypes.NETWORK_ERROR:
-                      hls.startLoad();
-                      break;
-                    case Hls.ErrorTypes.MEDIA_ERROR:
-                      hls.recoverMediaError();
-                      setTimeout(() => {
-                        if (video && !video.paused) {
-                          video.pause();
-                          setTimeout(() => {
-                            video.play().catch(() => { /* ignore */ });
-                          }, 100);
-                        }
-                      }, 500);
-                      break;
-                    default:
-                      hls.destroy();
-                      break;
-                  }
-                }
-              });
             },
           },
         icons: {
