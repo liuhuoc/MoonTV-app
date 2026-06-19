@@ -356,14 +356,10 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
       }
 
       try {
-        if (context.type === 'manifest' || context.type === 'level') {
-          callbacks.onSuccess(
-            { url: context.url, data: ctx.m3u8Content },
-            { total: ctx.m3u8Content.length, loaded: ctx.m3u8Content.length, retry: 0, chunks: [] },
-            context
-          );
-        } else if (context.type === 'fragment') {
-          const match = context.url.match(/seg_(\d+)\.ts/);
+        // HLS.js fragment context 用 context.frag 标识，manifest/level 用 context.type
+        if (context.frag) {
+          // 片段加载：从 URL 中提取分段索引
+          const match = context.url.match(/local:\/\/seg_(\d+)\.ts/);
           if (!match) {
             callbacks.onError({ type: 'networkError', details: 'loaderError', fatal: false }, context);
             return;
@@ -371,7 +367,12 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
           const segIndex = parseInt(match[1], 10);
           this.loadSegment(ctx, segIndex, callbacks, context);
         } else {
-          callbacks.onError({ type: 'networkError', details: 'loaderError', fatal: false }, context);
+          // manifest / level 加载：直接返回 M3U8 内容
+          callbacks.onSuccess(
+            { url: context.url, data: ctx.m3u8Content },
+            { total: ctx.m3u8Content.length, loaded: ctx.m3u8Content.length, retry: 0, chunks: [] },
+            context
+          );
         }
       } catch (e) {
         callbacks.onError({ type: 'networkError', details: 'loaderError', fatal: false }, context);
@@ -649,7 +650,7 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
           ];
           for (let i = 0; i < segCount; i++) {
             m3u8Lines.push(`#EXTINF:${segmentDurations[i].toFixed(3)},`);
-            m3u8Lines.push(`seg_${String(i).padStart(5, '0')}.ts`);
+            m3u8Lines.push(`local://seg_${String(i).padStart(5, '0')}.ts`);
           }
           m3u8Lines.push('#EXT-X-ENDLIST');
           const m3u8Content = m3u8Lines.join('\n');
