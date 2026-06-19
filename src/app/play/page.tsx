@@ -1435,11 +1435,14 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
                   loaderClass = Hls.DefaultConfig.loader;
                 }
 
+                const isLocal = !!(window as any).__localVideoCtx;
                 const hlsConfig: any = {
                   debug: false,
                   enableWorker: true,
                   lowLatencyMode: false,
-                  autoStartLoad: false,
+                  // autoStartLoad: false 只对本地视频生效（本地视频 manifest 同步加载，需手动控制时序）
+                  // 在线视频 manifest 异步加载，必须用默认的 true 否则 startLoad 不会被调用
+                  autoStartLoad: !isLocal,
 
                   /* 缓冲/内存相关 */
                   maxBufferLength: 30,

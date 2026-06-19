@@ -215,6 +215,39 @@ function extractFirstVariantUrl(content: string, baseUrl: string): string | null
   return null;
 }
 
+/** 解析 m3u8 播放列表，提取所有媒体片段 URL 和时长 */
+function parseM3u8SegmentsWithDurations(m3u8Content: string, baseUrl: string): { url: string; duration: number }[] {
+  const lines = m3u8Content.split('\n');
+  const result: { url: string; duration: number }[] = [];
+  let pendingDuration = 10; // 默认 10 秒
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    if (trimmed.startsWith('#EXTINF:')) {
+      const durMatch = trimmed.match(/#EXTINF:([\d.]+)/);
+      if (durMatch) {
+        pendingDuration = parseFloat(durMatch[1]);
+      }
+      continue;
+    }
+    if (trimmed.startsWith('#')) continue;
+    // 匹配常见片段格式
+    if (
+      trimmed.endsWith('.ts') ||
+      trimmed.endsWith('.m4s') ||
+      trimmed.endsWith('.mp4') ||
+      trimmed.endsWith('.aac') ||
+      trimmed.endsWith('.cmfv') ||
+      trimmed.endsWith('.cmfa') ||
+      trimmed.includes('.ts?') ||
+      trimmed.includes('.m4s?')
+    ) {
+      result.push({ url: resolveUrl(trimmed, baseUrl), duration: pendingDuration });
+    }
+  }
+  return result;
+}
+
 /** 解析 m3u8 播放列表，提取所有媒体片段 URL */
 function parseM3u8Segments(m3u8Content: string, baseUrl: string): string[] {
   const lines = m3u8Content.split('\n');
@@ -310,11 +343,8 @@ export async function startDownload(taskId: string): Promise<void> {
       await downloadWithProgress(taskId, url, fileName, controller.signal);
     }
   } catch (error) {
-    // 如果任务已被用户暂停（pauseDownload 设置了 paused 状态），不要覆盖为 failed
-    const currentTasks = getDownloadTasks();
-    const currentTask = currentTasks.find(t => t.id === taskId);
-    if (currentTask?.status === 'paused') {
-      // 用户主动暂停，静默退出，不改变状态
+    // 如果 signal 已被 abort（用户点了暂停），不要覆盖为 failed
+    if (controller.signal.aborted) {
       return;
     }
     updateDownloadTask(taskId, {
@@ -373,13 +403,14 @@ async function downloadHlsStream(taskId: string, playlistUrl: string, fileName: 
 
   const baseUrl = getBaseUrl(workUrl);
 
-  const segments = parseM3u8Segments(m3u8Content, baseUrl);
-  if (segments.length === 0) {
+  const segmentsWithDurations = parseM3u8SegmentsWithDurations(m3u8Content, baseUrl);
+  if (segmentsWithDurations.length === 0) {
     throw new Error('播放列表中没有找到视频片段');
   }
+  const maxDuration = Math.max(...segmentsWithDurations.map(s => s.duration));
 
   updateDownloadTask(taskId, {
-    totalBytes: segments.length,
+    totalBytes: segmentsWithDurations.length,
     downloadedBytes: 0,
     progress: 0,
     speed: '解析中...',
@@ -400,7 +431,7 @@ async function downloadHlsStream(taskId: string, playlistUrl: string, fileName: 
   if (!isCapacitor()) {
     // 断点续传：检查哪些片段已经下载
     let alreadyDownloaded = 0;
-    for (let i = 0; i < segments.length; i++) {
+    for (let i = 0; i < segmentsWithDurations.length; i++) {
       if (signal?.aborted) throw new Error('下载已取消');
       if (await browserSegmentExists(taskId, i + 1)) {
         alreadyDownloaded++;
@@ -410,25 +441,25 @@ async function downloadHlsStream(taskId: string, playlistUrl: string, fileName: 
     }
     if (alreadyDownloaded > 0) {
       updateDownloadTask(taskId, {
-        progress: Math.round((alreadyDownloaded / segments.length) * 100),
-        speed: `已跳过 ${alreadyDownloaded}/${segments.length} 片段`,
+        progress: Math.round((alreadyDownloaded / segmentsWithDurations.length) * 100),
+        speed: `已跳过 ${alreadyDownloaded}/${segmentsWithDurations.length} 片段`,
       });
     }
 
-    for (let i = alreadyDownloaded; i < segments.length; i++) {
+    for (let i = alreadyDownloaded; i < segmentsWithDurations.length; i++) {
       if (signal?.aborted) throw new Error('下载已取消');
       const segIndex = i + 1;
-      updateDownloadTask(taskId, { speed: `下载片段 ${segIndex}/${segments.length}` });
+      updateDownloadTask(taskId, { speed: `下载片段 ${segIndex}/${segmentsWithDurations.length}` });
       let blob: Blob | null = null;
       let lastErr: Error | null = null;
       for (let attempt = 1; attempt <= 3; attempt++) {
-        try { blob = await downloadSegment(segments[i], signal); break; }
+        try { blob = await downloadSegment(segmentsWithDurations[i].url, signal); break; }
         catch (err) { lastErr = err as Error; if (attempt < 3 && !signal?.aborted) await new Promise(r => setTimeout(r, 1000 * attempt)); }
       }
       if (!blob) throw new Error(`下载第 ${segIndex} 个片段失败(重试3次): ${lastErr?.message || '未知错误'}`);
       await browserSaveSegment(taskId, segIndex, blob);
       totalDownloaded += blob.size;
-      updateDownloadTask(taskId, { progress: Math.round(((i + 1) / segments.length) * 100), downloadedBytes: totalDownloaded, totalBytes: totalDownloaded, speed: `${segIndex}/${segments.length} 片段` });
+      updateDownloadTask(taskId, { progress: Math.round(((i + 1) / segmentsWithDurations.length) * 100), downloadedBytes: totalDownloaded, totalBytes: totalDownloaded, speed: `${segIndex}/${segmentsWithDurations.length} 片段` });
     }
 
     // 生成 M3U8 播放列表并保存到 IndexedDB
@@ -436,11 +467,11 @@ async function downloadHlsStream(taskId: string, playlistUrl: string, fileName: 
     const m3u8Lines: string[] = [
       '#EXTM3U',
       '#EXT-X-VERSION:3',
-      '#EXT-X-TARGETDURATION:10',
+      `#EXT-X-TARGETDURATION:${Math.ceil(maxDuration)}`,
       '#EXT-X-MEDIA-SEQUENCE:0',
     ];
-    for (let i = 0; i < segments.length; i++) {
-      m3u8Lines.push('#EXTINF:10.000,');
+    for (let i = 0; i < segmentsWithDurations.length; i++) {
+      m3u8Lines.push(`#EXTINF:${segmentsWithDurations[i].duration.toFixed(3)},`);
       m3u8Lines.push(`local://segment/${i}`);
     }
     m3u8Lines.push('#EXT-X-ENDLIST');
@@ -455,7 +486,7 @@ async function downloadHlsStream(taskId: string, playlistUrl: string, fileName: 
       totalBytes: totalDownloaded,
       localPath: taskId, // 浏览器端：localPath = taskId，用于 IndexedDB 查找
       writeDirectory: 'IndexedDB',
-      segmentCount: segments.length,
+      segmentCount: segmentsWithDurations.length,
     });
     return;
   }
@@ -477,7 +508,7 @@ async function downloadHlsStream(taskId: string, playlistUrl: string, fileName: 
   }
 
   const threadCount = getDownloadSettings().downloadThreads;
-  const segCount = segments.length;
+  const segCount = segmentsWithDurations.length;
 
   // 断点续传：检查哪些片段已经下载到磁盘
   let alreadyDownloaded = 0;
@@ -522,7 +553,7 @@ async function downloadHlsStream(taskId: string, playlistUrl: string, fileName: 
         let lastErr: Error | null = null;
         for (let attempt = 1; attempt <= 3; attempt++) {
           if (signal?.aborted) break;
-          try { blob = await downloadSegment(segments[i], signal); break; }
+          try { blob = await downloadSegment(segmentsWithDurations[i].url, signal); break; }
           catch (err) { lastErr = err as Error; if (attempt < 3 && !signal?.aborted) await new Promise(r => setTimeout(r, 2000 * attempt)); }
         }
         if (!blob) throw new Error(`下载片段 ${segIndex} 失败(重试3次): ${lastErr?.message || '未知错误'}`);
@@ -557,11 +588,11 @@ async function downloadHlsStream(taskId: string, playlistUrl: string, fileName: 
   const m3u8Lines: string[] = [
     '#EXTM3U',
     '#EXT-X-VERSION:3',
-    '#EXT-X-TARGETDURATION:10',
+    `#EXT-X-TARGETDURATION:${Math.ceil(maxDuration)}`,
     '#EXT-X-MEDIA-SEQUENCE:0',
   ];
   for (let i = 0; i < segCount; i++) {
-    m3u8Lines.push('#EXTINF:10.000,');
+    m3u8Lines.push(`#EXTINF:${segmentsWithDurations[i].duration.toFixed(3)},`);
     m3u8Lines.push(`local://segment/${i}`);
   }
   m3u8Lines.push('#EXT-X-ENDLIST');
