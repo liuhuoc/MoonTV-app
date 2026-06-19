@@ -158,6 +158,15 @@ function PlayPageClient() {
   const [videoUrl, setVideoUrl] = useState('');
   const [isLocalPlayback, setIsLocalPlayback] = useState(false);
 
+  // 调试控制台
+  const [showDebug, setShowDebug] = useState(false);
+  const [debugLogs, setDebugLogs] = useState<string[]>([]);
+  const addDebugLog = (msg: string) => {
+    const ts = new Date().toISOString().slice(11, 23);
+    console.log(`[MoonTV] ${msg}`);
+    setDebugLogs(prev => [...prev.slice(-199), `${ts} ${msg}`]);
+  };
+
   // 总集数
   const totalEpisodes = detail?.episodes?.length || 0;
 
@@ -350,7 +359,9 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
 
     load(context: any, config: any, callbacks: any) {
       const ctx = (window as any).__localVideoCtx;
+      addDebugLog(`LocalVideoLoader.load() called, url=${String(context.url).substring(0, 80)}, hasFrag=${!!context.frag}, hasType=${String(context.type)}`);
       if (!ctx) {
+        addDebugLog(`LocalVideoLoader: __localVideoCtx is null!`);
         callbacks.onError({ type: 'networkError', details: 'loaderError', fatal: false }, context);
         return;
       }
@@ -360,14 +371,18 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
         if (context.frag) {
           // 片段加载：从 URL 中提取分段索引
           const match = context.url.match(/local:\/\/seg_(\d+)\.ts/);
+          addDebugLog(`LocalVideoLoader: fragment request, url=${String(context.url).substring(0, 80)}, match=${!!match}`);
           if (!match) {
+            addDebugLog(`LocalVideoLoader: fragment URL does not match pattern!`);
             callbacks.onError({ type: 'networkError', details: 'loaderError', fatal: false }, context);
             return;
           }
           const segIndex = parseInt(match[1], 10);
+          addDebugLog(`LocalVideoLoader: loading segment ${segIndex}, cached=${ctx.segmentCache.has(segIndex)}`);
           this.loadSegment(ctx, segIndex, callbacks, context);
         } else {
           // manifest / level 加载：直接返回 M3U8 内容
+          addDebugLog(`LocalVideoLoader: manifest request, m3u8 length=${ctx.m3u8Content.length}`);
           callbacks.onSuccess(
             { url: context.url, data: ctx.m3u8Content },
             { total: ctx.m3u8Content.length, loaded: ctx.m3u8Content.length, retry: 0, chunks: [] },
@@ -375,6 +390,7 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
           );
         }
       } catch (e) {
+        addDebugLog(`LocalVideoLoader: error in load(): ${(e as Error).message}`);
         callbacks.onError({ type: 'networkError', details: 'loaderError', fatal: false }, context);
       }
     }
@@ -383,6 +399,7 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
       try {
         if (ctx.segmentCache.has(segIndex)) {
           const data = ctx.segmentCache.get(segIndex);
+          addDebugLog(`LocalVideoLoader: segment ${segIndex} from cache, size=${data.byteLength}`);
           callbacks.onSuccess(
             { url: context.url, data },
             { total: data.byteLength, loaded: data.byteLength, retry: 0, chunks: [] },
@@ -393,6 +410,7 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
 
         let arrayBuffer: ArrayBuffer;
         const segFileName = `seg_${String(segIndex).padStart(5, '0')}.ts`;
+        addDebugLog(`LocalVideoLoader: loading segment ${segIndex} from ${ctx.writeDirectory}`);
 
         if (ctx.writeDirectory === 'IndexedDB') {
           const buf = await ctx.browserReadSegment(ctx.taskId, segIndex + 1);
@@ -409,6 +427,7 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
         }
 
         ctx.segmentCache.set(segIndex, arrayBuffer);
+        addDebugLog(`LocalVideoLoader: segment ${segIndex} loaded, size=${arrayBuffer.byteLength}`);
 
         callbacks.onSuccess(
           { url: context.url, data: arrayBuffer },
@@ -416,6 +435,7 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
           context
         );
       } catch (e) {
+        addDebugLog(`LocalVideoLoader: segment ${segIndex} error: ${(e as Error).message}`);
         callbacks.onError(
           { type: 'networkError', details: 'loaderError', fatal: false, error: e },
           context
@@ -601,6 +621,7 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
 
         try {
           setLoadingMessage('正在读取视频信息...');
+          addDebugLog(`localInit: starting, taskId=${currentId || dlTask.id}, writeDir=${dlTask.writeDirectory || 'capacitor'}`);
 
           // 读取 M3U8 获取分段信息
           const segmentDurations: number[] = [];
@@ -610,6 +631,7 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
 
           if (dlTask.writeDirectory === 'IndexedDB') {
             playlistContent = await browserReadPlaylist(currentId || dlTask.id);
+            addDebugLog(`localInit: playlist from IndexedDB, length=${playlistContent.length}`);
           } else {
             if (!dlTask.writeDirectory) {
               setError('已下载文件信息不完整，请重新下载');
@@ -634,6 +656,7 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
           }
 
           const segCount = segmentDurations.length;
+          addDebugLog(`localInit: segCount=${segCount}, maxDuration=${Math.max(...segmentDurations).toFixed(1)}s`);
           if (segCount === 0) {
             setError('视频分段信息不完整');
             setLoading(false);
@@ -685,10 +708,13 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
             taskId: currentId || dlTask.id,
             browserReadSegment,
           };
+          addDebugLog(`localInit: __localVideoCtx set, preloadCache=${preloadCache.size} segments, m3u8=${m3u8Content.length} chars`);
 
           // 创建 M3U8 blob URL
           const m3u8Blob = new Blob([m3u8Content], { type: 'application/vnd.apple.mpegurl' });
-          setVideoUrl(URL.createObjectURL(m3u8Blob));
+          const blobUrl = URL.createObjectURL(m3u8Blob);
+          addDebugLog(`localInit: blob URL created, setting videoUrl`);
+          setVideoUrl(blobUrl);
           setLoading(false);
         } catch (e) {
           setError(`读取本地视频失败: ${(e as Error).message}`);
@@ -1375,9 +1401,11 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
         customType: {
           m3u8: function (video: HTMLVideoElement, url: string) {
               if (!Hls) {
-                console.error('HLS.js 未加载');
+                addDebugLog('customType: HLS.js not loaded');
                 return;
               }
+
+              addDebugLog(`customType: called, isLocalPlayback=${isLocalPlayback}, hasLocalCtx=${!!(window as any).__localVideoCtx}, url=${String(url).substring(0, 60)}`);
 
               if (video.hls) {
                 video.hls.destroy();
@@ -1390,10 +1418,13 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
                 let loaderClass: any;
                 if ((window as any).__localVideoCtx) {
                   loaderClass = LocalVideoLoader;
+                  addDebugLog('customType: using LocalVideoLoader');
                 } else if (blockAdEnabledRef.current) {
                   loaderClass = CustomHlsJsLoader;
+                  addDebugLog('customType: using CustomHlsJsLoader');
                 } else {
                   loaderClass = Hls.DefaultConfig.loader;
+                  addDebugLog('customType: using default loader');
                 }
 
                 const hlsConfig: any = {
@@ -1412,39 +1443,49 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
                 };
 
                 hls = new Hls(hlsConfig);
+                addDebugLog('customType: HLS instance created');
               } catch (e) {
-                console.error(`HLS实例创建失败: ${(e as Error).message}`);
+                addDebugLog(`customType: HLS creation failed: ${(e as Error).message}`);
                 return;
               }
 
               try {
                 hls.attachMedia(video);
+                addDebugLog('customType: attachMedia done');
                 hls.loadSource(url);
+                addDebugLog('customType: loadSource called');
               } catch (e) {
-                console.error(`loadSource/attachMedia 失败: ${(e as Error).message}`);
+                addDebugLog(`customType: attachMedia/loadSource failed: ${(e as Error).message}`);
                 return;
               }
               video.hls = hls;
 
               ensureVideoSource(video, url);
 
+              hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                addDebugLog(`HLS: MANIFEST_PARSED`);
+              });
+              hls.on(Hls.Events.LEVEL_LOADED, (_event: any, data: any) => {
+                addDebugLog(`HLS: LEVEL_LOADED, details=${data.details}`);
+              });
+              hls.on(Hls.Events.FRAG_LOADING, (_event: any, data: any) => {
+                addDebugLog(`HLS: FRAG_LOADING, sn=${data.frag?.sn}, url=${String(data.frag?.url || '').substring(0, 60)}`);
+              });
+              hls.on(Hls.Events.FRAG_LOADED, (_event: any, data: any) => {
+                addDebugLog(`HLS: FRAG_LOADED, sn=${data.frag?.sn}`);
+              });
+              hls.on(Hls.Events.FRAG_BUFFERED, (_event: any, data: any) => {
+                addDebugLog(`HLS: FRAG_BUFFERED, sn=${data.frag?.sn}`);
+              });
+
               hls.on(Hls.Events.ERROR, function (event: any, data: any) {
-                // bufferFullError 是非致命错误，不需要处理
                 if (data.details === 'bufferFullError') {
                   return;
                 }
 
-                // 详细错误信息
                 const errInfo = `HLS Error [${data.type}] ${data.details}`;
-                const urlInfo = data.url ? `\n  URL: ${data.url}` : '';
-                const responseInfo = data.response ? `\n  HTTP状态: ${data.response.code || 'N/A'}, URL: ${data.response.url || 'N/A'}` : '';
-
-                // SSL/网络错误通常是源头问题，不作为严重错误日志（因为可能有其他集数可用）
-                if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-                  console.warn(`${errInfo}${urlInfo}${responseInfo}`);
-                } else {
-                  console.error(`${errInfo}${urlInfo}${responseInfo}`);
-                }
+                const urlInfo = data.url ? ` URL: ${data.url}` : '';
+                addDebugLog(`${errInfo}${urlInfo}${data.fatal ? ' FATAL' : ''}`);
 
                 if (data.fatal) {
                   switch (data.type) {
@@ -2514,6 +2555,41 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
         </div>
         );
       })()}
+
+      {/* 调试控制台按钮 */}
+      <button
+        onClick={() => setShowDebug(!showDebug)}
+        className='fixed bottom-4 right-4 z-[9999] w-10 h-10 rounded-full bg-gray-800/80 text-green-400 text-xs font-mono flex items-center justify-center shadow-lg border border-gray-600 hover:bg-gray-700 transition-colors'
+        title='调试控制台'
+      >
+        {showDebug ? '✕' : 'DBG'}
+      </button>
+
+      {/* 调试控制台 */}
+      {showDebug && (
+        <div className='fixed bottom-16 right-4 z-[9998] w-96 max-h-96 bg-gray-900/95 border border-gray-600 rounded-xl shadow-2xl flex flex-col overflow-hidden'>
+          <div className='flex items-center justify-between px-3 py-2 bg-gray-800 border-b border-gray-700'>
+            <span className='text-xs font-mono text-green-400'>Debug Console</span>
+            <button
+              onClick={() => setDebugLogs([])}
+              className='text-xs text-gray-400 hover:text-white px-2 py-0.5 rounded'
+            >
+              清空
+            </button>
+          </div>
+          <div className='flex-1 overflow-y-auto p-2 font-mono text-xs leading-relaxed'>
+            {debugLogs.length === 0 ? (
+              <span className='text-gray-500'>等待日志...</span>
+            ) : (
+              debugLogs.map((log, i) => (
+                <div key={i} className='text-green-300 break-all py-0.5'>
+                  {log}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
     </PageLayout>
   );
 }
