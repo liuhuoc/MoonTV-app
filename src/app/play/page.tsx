@@ -1492,8 +1492,8 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
       artPlayerRef.current = new Artplayer({
         container: artRef.current,
         url: videoUrl,
-        // 本地播放使用 blob URL,不需要指定 type,让 Artplayer 直接播放
-        // 远程播放才需要 customType 处理 m3u8
+        // 本地播放使用 M3U8 播放列表，需要指定 type 让 Artplayer 调用 customType.m3u8
+        ...(isLocalPlayback ? { type: 'm3u8' } : {}),
         poster: videoCover,
         volume: 0.7,
         isLive: false,
