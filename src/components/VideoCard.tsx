@@ -309,7 +309,7 @@ export default function VideoCard({
       onClick={handleClick}
     >
       {/* 海报容器 */}
-      <div className="relative aspect-[2/3] overflow-hidden rounded-xl shadow-sm transition-shadow duration-300 ease-out group-hover:shadow-xl">
+      <div className="relative aspect-[2/3] overflow-hidden rounded-xl shadow-sm transition-all duration-500 ease-out group-hover:shadow-xl group-hover:shadow-green-500/10">
         {/* 骨架屏 */}
         {!isLoading && <ImagePlaceholder aspectRatio="aspect-[2/3]" />}
         {/* 图片 */}
@@ -318,7 +318,7 @@ export default function VideoCard({
             src={capacitorImageUrl || processImageUrl(actualPoster)}
             alt={actualTitle}
             referrerPolicy="origin"
-            className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 ease-out group-hover:scale-105"
+            className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 ease-out group-hover:scale-110"
             onLoad={() => {
               setIsLoading(true);
             }}
@@ -339,34 +339,34 @@ export default function VideoCard({
         )}
 
         {/* 暗化 overlay */}
-        <div className="absolute inset-0 bg-black/0 transition-colors duration-300 ease-out group-hover:bg-black/30" />
+        <div className="absolute inset-0 bg-black/0 transition-all duration-500 ease-out group-hover:bg-black/40" />
 
         {/* 播放按钮 */}
         {config.showPlayButton && (
-          <div className="absolute inset-0 flex items-center justify-center opacity-0 transition-opacity duration-300 ease-out group-hover:opacity-100">
-            <div className="flex items-center justify-center w-10 h-10 rounded-full bg-white/90 text-gray-900 shadow-lg backdrop-blur-sm transition-transform duration-300 ease-out group-hover:scale-100 scale-90">
-              <Play size={18} fill="currentColor" />
+          <div className="absolute inset-0 flex items-center justify-center opacity-0 transition-all duration-500 ease-out group-hover:opacity-100">
+            <div className="flex items-center justify-center w-12 h-12 rounded-full bg-green-500 text-white shadow-lg backdrop-blur-sm transition-all duration-500 ease-out group-hover:scale-110 scale-75 group-hover:shadow-green-500/50">
+              <Play size={20} fill="currentColor" />
             </div>
           </div>
         )}
 
         {/* 收藏 / 删除按钮 */}
-        <div className="absolute bottom-2 right-2 flex items-center gap-1.5 opacity-0 translate-y-1 transition-all duration-300 ease-out group-hover:opacity-100 group-hover:translate-y-0">
+        <div className="absolute bottom-2 right-2 flex items-center gap-1.5 opacity-0 translate-y-2 transition-all duration-500 ease-out group-hover:opacity-100 group-hover:translate-y-0">
           {config.showCheckCircle && (
             <button
               onClick={handleDeleteRecord}
-              className="flex items-center justify-center w-7 h-7 rounded-full bg-black/50 text-white backdrop-blur-sm transition-colors duration-200 hover:bg-red-500/80"
+              className="flex items-center justify-center w-8 h-8 rounded-full bg-black/50 text-white backdrop-blur-sm transition-all duration-300 hover:bg-red-500/80 hover:scale-110"
             >
-              <CheckCircle size={14} />
+              <CheckCircle size={16} />
             </button>
           )}
           {config.showHeart && (
             <button
               onClick={handleToggleFavorite}
-              className="flex items-center justify-center w-7 h-7 rounded-full bg-black/50 text-white backdrop-blur-sm transition-colors duration-200 hover:bg-red-500/80"
+              className="flex items-center justify-center w-8 h-8 rounded-full bg-black/50 text-white backdrop-blur-sm transition-all duration-300 hover:bg-red-500/80 hover:scale-110"
             >
               <Heart
-                size={14}
+                size={16}
                 className={
                   favorited ? 'fill-red-400 text-red-400' : 'fill-transparent'
                 }
@@ -377,14 +377,14 @@ export default function VideoCard({
 
         {/* 徽章：评分 */}
         {config.showRating && rate && (
-          <div className="absolute top-2 left-2 bg-pink-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-sm">
+          <div className="absolute top-2 left-2 bg-gradient-to-r from-pink-500 to-rose-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm">
             {rate}
           </div>
         )}
 
         {/* 徽章：集数 */}
         {actualEpisodes && actualEpisodes > 1 && (
-          <div className="absolute top-2 left-2 bg-green-500 text-white text-[10px] font-semibold px-1.5 py-0.5 rounded-full shadow-sm">
+          <div className="absolute top-2 left-2 bg-gradient-to-r from-green-500 to-emerald-500 text-white text-[10px] font-semibold px-2 py-0.5 rounded-full shadow-sm">
             {currentEpisode
               ? `${currentEpisode}/${actualEpisodes}`
               : actualEpisodes}
@@ -398,10 +398,10 @@ export default function VideoCard({
             target="_blank"
             rel="noopener noreferrer"
             onClick={(e) => e.stopPropagation()}
-            className="absolute top-2 left-2 opacity-0 -translate-x-1 transition-all duration-300 ease-out group-hover:opacity-100 group-hover:translate-x-0"
+            className="absolute top-2 left-2 opacity-0 -translate-x-2 transition-all duration-500 ease-out group-hover:opacity-100 group-hover:translate-x-0"
           >
-            <div className="flex items-center justify-center w-7 h-7 rounded-full bg-green-500 text-white text-[10px] font-bold shadow-sm hover:bg-green-600 transition-colors duration-200">
-              <Link size={14} />
+            <div className="flex items-center justify-center w-8 h-8 rounded-full bg-green-500 text-white text-[10px] font-bold shadow-sm hover:bg-green-600 transition-all duration-300 hover:scale-110">
+              <Link size={16} />
             </div>
           </a>
         )}
@@ -411,7 +411,7 @@ export default function VideoCard({
       {config.showProgress && progress !== undefined && (
         <div className="mt-1.5 h-0.5 w-full bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
           <div
-            className="h-full bg-gradient-to-r from-green-400 to-green-600 transition-all duration-500 ease-out"
+            className="h-full bg-gradient-to-r from-green-400 to-emerald-500 transition-all duration-700 ease-out"
             style={{ width: `${progress}%` }}
           />
         </div>
@@ -419,7 +419,7 @@ export default function VideoCard({
 
       {/* 标题与来源 */}
       <div className="mt-2 px-0.5">
-        <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate leading-snug">
+        <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate leading-snug transition-colors duration-300 group-hover:text-green-600 dark:group-hover:text-green-400">
           {actualTitle}
         </p>
         {config.showSourceName && source_name && (

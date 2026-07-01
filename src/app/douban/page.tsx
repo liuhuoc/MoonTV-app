@@ -397,10 +397,10 @@ function DoubanPageClient() {
     <PageLayout activePath={getActivePath()}>
       <div className='px-4 sm:px-10 py-4 sm:py-8 overflow-visible'>
         {/* 页面标题和选择器 */}
-        <div className='mb-8 sm:mb-10 space-y-6 sm:space-y-8'>
+        <div className='mb-8 sm:mb-10 space-y-6 sm:space-y-8 fade-in-up'>
           {/* 页面标题 */}
           <div className='flex items-center gap-3'>
-            <TitleIcon className='w-8 h-8 text-green-400' />
+            <TitleIcon className='w-8 h-8 text-green-500' />
             <div>
               <h1 className='text-3xl sm:text-4xl font-bold text-gradient'>
                 {getPageTitle()}
@@ -412,7 +412,7 @@ function DoubanPageClient() {
           </div>
 
           {/* 类型切换 Tab */}
-          <div className='flex gap-2'>
+          <div className='flex gap-2 fade-in-up fade-in-up-delay-1'>
             {typeTabs.map((tab) => {
               const Icon = tab.icon;
               const isActive = type === tab.key;
@@ -420,10 +420,10 @@ function DoubanPageClient() {
                 <button
                   key={tab.key}
                   onClick={() => handleTypeSwitch(tab.key)}
-                  className={`flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-medium transition-all ${
+                  className={`flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-medium transition-all duration-300 ${
                     isActive
                       ? 'bg-green-500 text-white shadow-lg shadow-green-500/25'
-                      : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
+                      : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 hover:scale-105'
                   }`}
                 >
                   <Icon size={16} />
@@ -434,7 +434,7 @@ function DoubanPageClient() {
           </div>
 
           {/* 选择器组件 */}
-          <div className='glass rounded-3xl p-5 sm:p-8'>
+          <div className='glass rounded-3xl p-5 sm:p-8 fade-in-up fade-in-up-delay-2'>
             <DoubanSelector
               type={type as 'movie' | 'tv' | 'show'}
               primarySelection={primarySelection}
@@ -450,7 +450,7 @@ function DoubanPageClient() {
         </div>
 
         {/* 内容展示区域 */}
-        <div className='max-w-[95%] mx-auto mt-8 overflow-visible'>
+        <div className='max-w-[95%] mx-auto mt-8 overflow-visible fade-in-up fade-in-up-delay-3'>
           {/* 内容网格 */}
           <div className='grid grid-cols-3 gap-x-3 gap-y-14 sm:gap-y-20 px-0 sm:px-2 sm:grid-cols-[repeat(auto-fit,minmax(180px,1fr))] sm:gap-x-10'>
             {loading
@@ -484,7 +484,7 @@ function DoubanPageClient() {
             >
               {isLoadingMore && (
                 <div className='flex items-center gap-3'>
-                  <Loader2 className='w-5 h-5 text-green-400 animate-spin' />
+                  <Loader2 className='w-5 h-5 text-green-500 animate-spin' />
                   <span className='text-sm text-gray-500 dark:text-gray-400'>加载中...</span>
                 </div>
               )}
@@ -500,7 +500,7 @@ function DoubanPageClient() {
 
           {/* 空状态 */}
           {!loading && doubanData.length === 0 && (
-            <div className='flex flex-col items-center justify-center py-16 text-gray-500 dark:text-gray-400'>
+            <div className='flex flex-col items-center justify-center py-16 text-gray-500 dark:text-gray-400 fade-in'>
               <Film className='w-12 h-12 mb-4 opacity-30' />
               <p className='text-lg'>暂无相关内容</p>
               <p className='text-sm mt-1 opacity-60'>试试更换分类、地区、年份或排序</p>

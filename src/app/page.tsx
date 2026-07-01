@@ -121,7 +121,7 @@ function HomeClient() {
   }) => (
     <section className='mb-10 sm:mb-14'>
       <div className='mb-5 flex items-center justify-between'>
-        <h2 className='text-2xl font-bold bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 bg-clip-text text-transparent'>
+        <h2 className='text-2xl font-bold text-gradient'>
           {title}
         </h2>
         <Link
@@ -148,8 +148,8 @@ function HomeClient() {
       <div className='px-4 sm:px-10 py-8 sm:py-12 overflow-visible'>
         <div className='max-w-[95%] mx-auto'>
           {/* 顶部标题 */}
-          <div className='mb-10 sm:mb-14'>
-            <h1 className='text-4xl sm:text-5xl font-extrabold tracking-tight bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 bg-clip-text text-transparent'>
+          <div className='mb-10 sm:mb-14 fade-in-up'>
+            <h1 className='text-4xl sm:text-5xl font-extrabold tracking-tight text-gradient'>
               MoonTV
             </h1>
             <p className='mt-2 text-base sm:text-lg text-gray-500 dark:text-gray-400'>
@@ -158,17 +158,17 @@ function HomeClient() {
           </div>
 
           {/* 搜索框 */}
-          <div className='mb-10 sm:mb-14'>
+          <div className='mb-10 sm:mb-14 fade-in-up fade-in-up-delay-1'>
             <form onSubmit={handleSearch} className='max-w-2xl'>
               <div className='relative group'>
-                <Search className='absolute left-5 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400 dark:text-gray-500 transition-colors group-focus-within:text-green-400' />
+                <Search className='absolute left-5 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400 dark:text-gray-500 transition-colors group-focus-within:text-green-500' />
                 <input
                   type='text'
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder='搜索电影、电视剧...'
                   onClick={() => router.push('/search')}
-                  className='w-full h-14 rounded-full bg-white dark:bg-[#1a1a2e]/80 py-3 pl-14 pr-12 text-base text-gray-900 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-400/50 focus:border-green-400/50 border border-gray-200 dark:border-white/10 shadow-lg shadow-black/5 dark:shadow-black/20 transition-colors duration-200 cursor-pointer'
+                  className='w-full h-14 rounded-full bg-white dark:bg-[#1a1a2e]/80 py-3 pl-14 pr-12 text-base text-gray-900 dark:text-gray-200 placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-green-500/30 focus:border-green-500/30 border border-gray-200 dark:border-white/10 shadow-lg shadow-black/5 dark:shadow-black/20 transition-all duration-300 cursor-pointer hover:shadow-xl hover:border-green-500/20'
                   readOnly
                 />
               </div>
@@ -176,101 +176,111 @@ function HomeClient() {
           </div>
 
           {/* 继续观看 */}
-          <ContinueWatching />
+          <div className="fade-in-up fade-in-up-delay-2">
+            <ContinueWatching />
+          </div>
 
           {/* 热门电影 */}
-          <ContentSection title='热门电影' href='/douban?type=movie'>
-            {loading
-              ? Array.from({ length: 8 }).map((_, index) => (
-                  <SkeletonCard key={index} />
-                ))
-              : hotMovies.map((movie, index) => (
-                  <div
-                    key={index}
-                    className='min-w-[120px] w-28 sm:min-w-[200px] sm:w-48'
-                  >
-                    <VideoCard
-                      from='douban'
-                      title={movie.title}
-                      poster={movie.poster}
-                      douban_id={movie.id}
-                      rate={movie.rate}
-                      year={movie.year}
-                      type='movie'
-                    />
-                  </div>
-                ))}
-          </ContentSection>
+          <div className="fade-in-up fade-in-up-delay-3">
+            <ContentSection title='热门电影' href='/douban?type=movie'>
+              {loading
+                ? Array.from({ length: 8 }).map((_, index) => (
+                    <SkeletonCard key={index} />
+                  ))
+                : hotMovies.map((movie, index) => (
+                    <div
+                      key={index}
+                      className='min-w-[120px] w-28 sm:min-w-[200px] sm:w-48'
+                    >
+                      <VideoCard
+                        from='douban'
+                        title={movie.title}
+                        poster={movie.poster}
+                        douban_id={movie.id}
+                        rate={movie.rate}
+                        year={movie.year}
+                        type='movie'
+                      />
+                    </div>
+                  ))}
+            </ContentSection>
+          </div>
 
           {/* 热门剧集 */}
-          <ContentSection title='热门剧集' href='/douban?type=tv'>
-            {loading
-              ? Array.from({ length: 8 }).map((_, index) => (
-                  <SkeletonCard key={index} />
-                ))
-              : hotTvShows.map((show, index) => (
-                  <div
-                    key={index}
-                    className='min-w-[120px] w-28 sm:min-w-[200px] sm:w-48'
-                  >
-                    <VideoCard
-                      from='douban'
-                      title={show.title}
-                      poster={show.poster}
-                      douban_id={show.id}
-                      rate={show.rate}
-                      year={show.year}
-                    />
-                  </div>
-                ))}
-          </ContentSection>
+          <div className="fade-in-up fade-in-up-delay-4">
+            <ContentSection title='热门剧集' href='/douban?type=tv'>
+              {loading
+                ? Array.from({ length: 8 }).map((_, index) => (
+                    <SkeletonCard key={index} />
+                  ))
+                : hotTvShows.map((show, index) => (
+                    <div
+                      key={index}
+                      className='min-w-[120px] w-28 sm:min-w-[200px] sm:w-48'
+                    >
+                      <VideoCard
+                        from='douban'
+                        title={show.title}
+                        poster={show.poster}
+                        douban_id={show.id}
+                        rate={show.rate}
+                        year={show.year}
+                      />
+                    </div>
+                  ))}
+            </ContentSection>
+          </div>
 
           {/* 热门综艺 */}
-          <ContentSection title='热门综艺' href='/douban?type=show'>
-            {loading
-              ? Array.from({ length: 8 }).map((_, index) => (
-                  <SkeletonCard key={index} />
-                ))
-              : hotVarietyShows.map((show, index) => (
-                  <div
-                    key={index}
-                    className='min-w-[120px] w-28 sm:min-w-[200px] sm:w-48'
-                  >
-                    <VideoCard
-                      from='douban'
-                      title={show.title}
-                      poster={show.poster}
-                      douban_id={show.id}
-                      rate={show.rate}
-                      year={show.year}
-                    />
-                  </div>
-                ))}
-          </ContentSection>
+          <div className="fade-in-up fade-in-up-delay-5">
+            <ContentSection title='热门综艺' href='/douban?type=show'>
+              {loading
+                ? Array.from({ length: 8 }).map((_, index) => (
+                    <SkeletonCard key={index} />
+                  ))
+                : hotVarietyShows.map((show, index) => (
+                    <div
+                      key={index}
+                      className='min-w-[120px] w-28 sm:min-w-[200px] sm:w-48'
+                    >
+                      <VideoCard
+                        from='douban'
+                        title={show.title}
+                        poster={show.poster}
+                        douban_id={show.id}
+                        rate={show.rate}
+                        year={show.year}
+                      />
+                    </div>
+                  ))}
+            </ContentSection>
+          </div>
 
           {/* 热门动漫 */}
-          <ContentSection title='热门动漫' href='/douban?type=animation'>
-            {loading
-              ? Array.from({ length: 8 }).map((_, index) => (
-                  <SkeletonCard key={index} />
-                ))
-              : hotAnimation.map((show, index) => (
-                  <div
-                    key={index}
-                    className='min-w-[120px] w-28 sm:min-w-[200px] sm:w-48'
-                  >
-                    <VideoCard
-                      from='douban'
-                      title={show.title}
-                      poster={show.poster}
-                      douban_id={show.id}
-                      rate={show.rate}
-                      year={show.year}
-                      type='movie'
-                    />
-                  </div>
-                ))}
-          </ContentSection>
+          <div className="fade-in-up fade-in-up-delay-6">
+            <ContentSection title='热门动漫' href='/douban?type=animation'>
+              {loading
+                ? Array.from({ length: 8 }).map((_, index) => (
+                    <SkeletonCard key={index} />
+                  ))
+                : hotAnimation.map((show, index) => (
+                    <div
+                      key={index}
+                      className='min-w-[120px] w-28 sm:min-w-[200px] sm:w-48'
+                    >
+                      <VideoCard
+                        from='douban'
+                        title={show.title}
+                        poster={show.poster}
+                        douban_id={show.id}
+                        rate={show.rate}
+                        year={show.year}
+                        type='movie'
+                      />
+                    </div>
+                  ))}
+            </ContentSection>
+          </div>
         </div>
       </div>
     </PageLayout>
