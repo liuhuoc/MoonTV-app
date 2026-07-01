@@ -2136,16 +2136,11 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
               artPlayerRef.current.controls = true;
             }
             
-            // 恢复viewport设置
-            const metaViewport = document.querySelector('meta[name="viewport"]');
-            if (metaViewport) {
-              metaViewport.setAttribute('content', 'width=device-width, initial-scale=1.0, viewport-fit=cover');
-            }
-            
-            // 恢复CSS样式
+            // 恢复CSS样式（先恢复视频容器样式）
             const videoContainer = document.querySelector('.art-video-player');
             if (videoContainer) {
               const container = videoContainer as HTMLElement;
+              container.style.filter = '';
               container.style.transform = '';
               container.style.transformOrigin = '';
               container.style.width = '';
@@ -2161,6 +2156,23 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
             
             document.body.style.overflow = '';
             document.documentElement.style.overflow = '';
+            
+            // 延迟恢复viewport，确保状态栏完全显示后再更新safe-area
+            setTimeout(() => {
+              const metaViewport = document.querySelector('meta[name="viewport"]');
+              if (metaViewport) {
+                metaViewport.setAttribute('content', 'width=device-width, initial-scale=1.0, viewport-fit=cover');
+              }
+              // 强制触发重排，确保safe-area-inset正确计算
+              const header = document.querySelector('.mobile-header-safe');
+              if (header) {
+                const el = header as HTMLElement;
+                el.style.display = 'none';
+                // 触发reflow
+                void el.offsetHeight;
+                el.style.display = '';
+              }
+            }, 50);
           }
         }
       });
@@ -2238,16 +2250,11 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
               }
             }
             
-            // 恢复viewport设置
-            const metaViewport = document.querySelector('meta[name="viewport"]');
-            if (metaViewport) {
-              metaViewport.setAttribute('content', 'width=device-width, initial-scale=1.0, viewport-fit=cover');
-            }
-            
-            // 恢复CSS样式
+            // 恢复CSS样式（先恢复视频容器样式）
             const videoContainer = document.querySelector('.art-video-player');
             if (videoContainer) {
               const container = videoContainer as HTMLElement;
+              container.style.filter = '';
               container.style.transform = '';
               container.style.transformOrigin = '';
               container.style.width = '';
@@ -2263,6 +2270,23 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
             
             document.body.style.overflow = '';
             document.documentElement.style.overflow = '';
+            
+            // 延迟恢复viewport，确保状态栏完全显示后再更新safe-area
+            setTimeout(() => {
+              const metaViewport = document.querySelector('meta[name="viewport"]');
+              if (metaViewport) {
+                metaViewport.setAttribute('content', 'width=device-width, initial-scale=1.0, viewport-fit=cover');
+              }
+              // 强制触发重排，确保safe-area-inset正确计算
+              const header = document.querySelector('.mobile-header-safe');
+              if (header) {
+                const el = header as HTMLElement;
+                el.style.display = 'none';
+                // 触发reflow
+                void el.offsetHeight;
+                el.style.display = '';
+              }
+            }, 50);
           }
         }
       });
