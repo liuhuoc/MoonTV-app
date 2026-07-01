@@ -207,6 +207,8 @@ function PlayPageClient() {
   const gestureStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
   const [brightness, setBrightness] = useState(1);
   const brightnessRef = useRef(1);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const isFullscreenRef = useRef(false);
 
   const downloadedEpisodes = useMemo(() => {
     const d = detail;
@@ -994,7 +996,7 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
   // 手势控制
   // ---------------------------------------------------------------------------
   const handleGestureStart = (e: React.TouchEvent) => {
-    if (!artPlayerRef.current) return;
+    if (!artPlayerRef.current || !isFullscreenRef.current) return;
     const touch = e.touches[0];
     const container = e.currentTarget as HTMLElement;
     const rect = container.getBoundingClientRect();
@@ -1040,8 +1042,13 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
     } else if (gestureState.type === 'brightness') {
       const newBrightness = Math.max(0.2, Math.min(1, gestureState.initialValue + normalizedDelta * 0.8));
       const roundedBrightness = Math.round(newBrightness * 100) / 100;
-      setBrightness(roundedBrightness);
       brightnessRef.current = roundedBrightness;
+      setBrightness(roundedBrightness);
+      // 直接应用到视频播放器元素，确保全屏时也生效
+      const videoPlayer = document.querySelector('.art-video-player');
+      if (videoPlayer) {
+        (videoPlayer as HTMLElement).style.filter = `brightness(${roundedBrightness})`;
+      }
       setGestureState(prev => ({ ...prev, value: roundedBrightness }));
     }
   };
@@ -1710,6 +1717,169 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
       // 监听播放器事件
       artPlayerRef.current.on('ready', () => {
         setError(null);
+        
+        // 给播放器元素绑定手势控制
+        const playerEl = document.querySelector('.art-video-player') as HTMLElement;
+        if (playerEl && !playerEl.dataset.gestureBound) {
+          playerEl.dataset.gestureBound = 'true';
+          
+          let localGestureStart: { x: number; y: number; time: number } | null = null;
+          let localGestureType: 'volume' | 'brightness' | 'none' = 'none';
+          let localInitialValue = 0;
+          let indicatorTimeout: NodeJS.Timeout | null = null;
+          
+          // 创建指示器容器
+          const indicatorContainer = document.createElement('div');
+          indicatorContainer.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:99999;';
+          indicatorContainer.className = 'gesture-indicator-container';
+          playerEl.appendChild(indicatorContainer);
+          
+          const showIndicator = (type: 'volume' | 'brightness', value: number) => {
+            if (indicatorTimeout) {
+              clearTimeout(indicatorTimeout);
+            }
+            indicatorContainer.innerHTML = '';
+            
+            const isLeft = type === 'brightness';
+            
+            // 进度条
+            const progressBar = document.createElement('div');
+            progressBar.style.cssText = `
+              position: absolute;
+              ${isLeft ? 'left: 20px;' : 'right: 20px;'}
+              top: 50%;
+              transform: translateY(-50%);
+              width: 4px;
+              height: 120px;
+              background: rgba(255,255,255,0.3);
+              border-radius: 2px;
+              overflow: hidden;
+            `;
+            
+            const progressFill = document.createElement('div');
+            const percent = type === 'brightness' 
+              ? Math.max(0, Math.min(100, ((value - 0.2) / 0.8) * 100))
+              : value * 100;
+            progressFill.style.cssText = `
+              position: absolute;
+              bottom: 0;
+              left: 0;
+              width: 100%;
+              height: ${percent}%;
+              background: ${isLeft ? 'linear-gradient(to top, #fbbf24, #f59e0b)' : 'linear-gradient(to top, #22c55e, #16a34a)'};
+              border-radius: 2px;
+              transition: height 0.1s ease;
+            `;
+            progressBar.appendChild(progressFill);
+            indicatorContainer.appendChild(progressBar);
+            
+            // 指示器图标和数值
+            const indicator = document.createElement('div');
+            indicator.style.cssText = `
+              position: absolute;
+              ${isLeft ? 'left: 40px;' : 'right: 40px;'}
+              top: 50%;
+              transform: translateY(-50%);
+              display: flex;
+              flex-direction: column;
+              align-items: center;
+              gap: 8px;
+              color: white;
+              font-size: 14px;
+              font-weight: 500;
+              text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+            `;
+            
+            const iconSvg = isLeft 
+              ? `<svg width="28" height="28" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                   <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                 </svg>`
+              : (value > 0.5 
+                  ? `<svg width="28" height="28" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                       <path stroke-linecap="round" stroke-linejoin="round" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                     </svg>`
+                  : value > 0 
+                    ? `<svg width="28" height="28" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                         <path stroke-linecap="round" stroke-linejoin="round" d="M15.536 8.464a5 5 0 010 7.072M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                       </svg>`
+                    : `<svg width="28" height="28" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                         <path stroke-linecap="round" stroke-linejoin="round" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15zM17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+                       </svg>`
+                );
+            
+            const displayPercent = type === 'brightness'
+              ? Math.round(((value - 0.2) / 0.8) * 100)
+              : Math.round(value * 100);
+            
+            indicator.innerHTML = `${iconSvg}<span>${displayPercent}%</span>`;
+            indicatorContainer.appendChild(indicator);
+          };
+          
+          const hideIndicator = () => {
+            if (indicatorTimeout) {
+              clearTimeout(indicatorTimeout);
+            }
+            indicatorTimeout = setTimeout(() => {
+              indicatorContainer.innerHTML = '';
+            }, 500);
+          };
+          
+          playerEl.addEventListener('touchstart', (e) => {
+            if (!artPlayerRef.current || !isFullscreenRef.current) return;
+            if (e.touches.length !== 1) return;
+            
+            const touch = e.touches[0];
+            const rect = playerEl.getBoundingClientRect();
+            const relativeX = touch.clientX - rect.left;
+            const isLeftSide = relativeX < rect.width / 2;
+            
+            localGestureStart = {
+              x: touch.clientX,
+              y: touch.clientY,
+              time: Date.now(),
+            };
+            
+            localGestureType = isLeftSide ? 'brightness' : 'volume';
+            localInitialValue = isLeftSide 
+              ? brightnessRef.current 
+              : artPlayerRef.current.volume;
+            
+            showIndicator(localGestureType, localInitialValue);
+          }, { passive: true });
+          
+          playerEl.addEventListener('touchmove', (e) => {
+            if (!localGestureStart || !artPlayerRef.current || !isFullscreenRef.current) return;
+            if (e.touches.length !== 1) return;
+            
+            const touch = e.touches[0];
+            const rect = playerEl.getBoundingClientRect();
+            const deltaY = localGestureStart.y - touch.clientY;
+            const maxChange = rect.height * 0.6;
+            const normalizedDelta = Math.max(-1, Math.min(1, deltaY / maxChange));
+            
+            if (localGestureType === 'volume') {
+              const newVolume = Math.max(0, Math.min(1, localInitialValue + normalizedDelta));
+              const roundedVolume = Math.round(newVolume * 100) / 100;
+              artPlayerRef.current.volume = roundedVolume;
+              lastVolumeRef.current = roundedVolume;
+              showIndicator('volume', roundedVolume);
+            } else if (localGestureType === 'brightness') {
+              const newBrightness = Math.max(0.2, Math.min(1, localInitialValue + normalizedDelta * 0.8));
+              const roundedBrightness = Math.round(newBrightness * 100) / 100;
+              brightnessRef.current = roundedBrightness;
+              setBrightness(roundedBrightness);
+              // 应用到播放器元素
+              playerEl.style.filter = `brightness(${roundedBrightness})`;
+              showIndicator('brightness', roundedBrightness);
+            }
+          }, { passive: true });
+          
+          playerEl.addEventListener('touchend', () => {
+            localGestureStart = null;
+            localGestureType = 'none';
+            hideIndicator();
+          });
+        }
       });
 
       artPlayerRef.current.on('video:volumechange', () => {
@@ -1868,6 +2038,8 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
 
       // 移动端全屏事件监听
       artPlayerRef.current.on('fullscreen', async (state: boolean) => {
+        setIsFullscreen(state);
+        isFullscreenRef.current = state;
         if (typeof window !== 'undefined') {
           if (state) {
             // 进入全屏时，强制横屏
@@ -1995,6 +2167,8 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
 
       // 网页全屏事件监听
       artPlayerRef.current.on('fullscreenWeb', async (state: boolean) => {
+        setIsFullscreen(state);
+        isFullscreenRef.current = state;
         if (typeof window !== 'undefined') {
           if (state) {
             // 进入网页全屏时，强制横屏
