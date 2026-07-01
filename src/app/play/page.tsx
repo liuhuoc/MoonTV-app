@@ -192,6 +192,22 @@ function PlayPageClient() {
   const [showDownloadSelector, setShowDownloadSelector] = useState(false);
   const [downloadSelections, setDownloadSelections] = useState<Set<number>>(new Set());
 
+  // 手势控制相关状态
+  const [gestureState, setGestureState] = useState<{
+    active: boolean;
+    type: 'volume' | 'brightness' | 'none';
+    value: number;
+    initialValue: number;
+  }>({
+    active: false,
+    type: 'none',
+    value: 0,
+    initialValue: 0,
+  });
+  const gestureStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
+  const [brightness, setBrightness] = useState(1);
+  const brightnessRef = useRef(1);
+
   const downloadedEpisodes = useMemo(() => {
     const d = detail;
     if (!d || !d.episodes) return new Set<number>();
@@ -972,6 +988,74 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
       }
       setCurrentEpisodeIndex(idx + 1);
     }
+  };
+
+  // ---------------------------------------------------------------------------
+  // 手势控制
+  // ---------------------------------------------------------------------------
+  const handleGestureStart = (e: React.TouchEvent) => {
+    if (!artPlayerRef.current) return;
+    const touch = e.touches[0];
+    const container = e.currentTarget as HTMLElement;
+    const rect = container.getBoundingClientRect();
+    
+    gestureStartRef.current = {
+      x: touch.clientX,
+      y: touch.clientY,
+      time: Date.now(),
+    };
+
+    const relativeX = touch.clientX - rect.left;
+    const isLeftSide = relativeX < rect.width / 2;
+
+    const initialValue = isLeftSide 
+      ? brightnessRef.current 
+      : artPlayerRef.current.volume;
+
+    setGestureState({
+      active: true,
+      type: isLeftSide ? 'brightness' : 'volume',
+      value: initialValue,
+      initialValue,
+    });
+  };
+
+  const handleGestureMove = (e: React.TouchEvent) => {
+    if (!gestureStartRef.current || !gestureState.active || !artPlayerRef.current) return;
+    
+    const touch = e.touches[0];
+    const container = e.currentTarget as HTMLElement;
+    const rect = container.getBoundingClientRect();
+    
+    const deltaY = gestureStartRef.current.y - touch.clientY;
+    const maxChange = rect.height * 0.6;
+    const normalizedDelta = Math.max(-1, Math.min(1, deltaY / maxChange));
+
+    if (gestureState.type === 'volume') {
+      const newVolume = Math.max(0, Math.min(1, gestureState.initialValue + normalizedDelta));
+      const roundedVolume = Math.round(newVolume * 100) / 100;
+      artPlayerRef.current.volume = roundedVolume;
+      lastVolumeRef.current = roundedVolume;
+      setGestureState(prev => ({ ...prev, value: roundedVolume }));
+    } else if (gestureState.type === 'brightness') {
+      const newBrightness = Math.max(0.2, Math.min(1, gestureState.initialValue + normalizedDelta * 0.8));
+      const roundedBrightness = Math.round(newBrightness * 100) / 100;
+      setBrightness(roundedBrightness);
+      brightnessRef.current = roundedBrightness;
+      setGestureState(prev => ({ ...prev, value: roundedBrightness }));
+    }
+  };
+
+  const handleGestureEnd = () => {
+    gestureStartRef.current = null;
+    setTimeout(() => {
+      setGestureState({
+        active: false,
+        type: 'none',
+        value: 0,
+        initialValue: 0,
+      });
+    }, 500);
   };
 
   // ---------------------------------------------------------------------------
@@ -2321,11 +2405,74 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
                 isEpisodeSelectorCollapsed ? 'col-span-1' : 'md:col-span-3'
               }`}
             >
-              <div className='relative w-full h-[300px] lg:h-full'>
+              <div 
+                className='relative w-full h-[300px] lg:h-full'
+                onTouchStart={handleGestureStart}
+                onTouchMove={handleGestureMove}
+                onTouchEnd={handleGestureEnd}
+              >
                 <div
                   ref={artRef}
                   className='bg-black w-full h-full rounded-2xl overflow-hidden shadow-lg'
+                  style={{ 
+                    filter: `brightness(${brightness})`,
+                    transition: gestureState.active ? 'none' : 'filter 0.3s ease'
+                  }}
                 />
+
+                {/* 亮度/音量手势指示器 */}
+                {gestureState.active && (
+                  <>
+                    {/* 左侧亮度指示器 */}
+                    {gestureState.type === 'brightness' && (
+                      <>
+                        <div className='gesture-progress-bar gesture-progress-bar-left'>
+                          <div 
+                            className='gesture-progress-fill'
+                            style={{ 
+                              height: `${Math.max(0, Math.min(100, ((gestureState.value - 0.2) / 0.8) * 100))}%`,
+                              background: 'linear-gradient(to top, #fbbf24, #f59e0b)'
+                            }}
+                          />
+                        </div>
+                        <div className='gesture-indicator gesture-indicator-left show'>
+                          <svg className='w-5 h-5' fill='none' viewBox='0 0 24 24' stroke='currentColor'>
+                            <path strokeLinecap='round' strokeLinejoin='round' strokeWidth={2} 
+                              d='M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z' />
+                          </svg>
+                          <span>{Math.round(((gestureState.value - 0.2) / 0.8) * 100)}%</span>
+                        </div>
+                      </>
+                    )}
+                    
+                    {/* 右侧音量指示器 */}
+                    {gestureState.type === 'volume' && (
+                      <>
+                        <div className='gesture-progress-bar gesture-progress-bar-right'>
+                          <div 
+                            className='gesture-progress-fill'
+                            style={{ height: `${gestureState.value * 100}%` }}
+                          />
+                        </div>
+                        <div className='gesture-indicator gesture-indicator-right show'>
+                          <svg className='w-5 h-5' fill='none' viewBox='0 0 24 24' stroke='currentColor'>
+                            {gestureState.value > 0.5 ? (
+                              <path strokeLinecap='round' strokeLinejoin='round' strokeWidth={2} 
+                                d='M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z' />
+                            ) : gestureState.value > 0 ? (
+                              <path strokeLinecap='round' strokeLinejoin='round' strokeWidth={2} 
+                                d='M15.536 8.464a5 5 0 010 7.072M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z' />
+                            ) : (
+                              <path strokeLinecap='round' strokeLinejoin='round' strokeWidth={2} 
+                                d='M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15zM17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2' />
+                            )}
+                          </svg>
+                          <span>{Math.round(gestureState.value * 100)}%</span>
+                        </div>
+                      </>
+                    )}
+                  </>
+                )}
 
                 {/* 换源加载蒙层 */}
                 {isVideoLoading && (
