@@ -207,7 +207,6 @@ function PlayPageClient() {
   const gestureStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
   const [brightness, setBrightness] = useState(1);
   const brightnessRef = useRef(1);
-  const [isFullscreen, setIsFullscreen] = useState(false);
   const isFullscreenRef = useRef(false);
 
   const downloadedEpisodes = useMemo(() => {
@@ -1726,7 +1725,7 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
           let localGestureStart: { x: number; y: number; time: number } | null = null;
           let localGestureType: 'volume' | 'brightness' | 'none' = 'none';
           let localInitialValue = 0;
-          let localGestureActiveRef = false;
+          let localGestureActive = false;
           let indicatorTimeout: NodeJS.Timeout | null = null;
           
           // 创建指示器容器
@@ -1861,10 +1860,10 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
             
             // 最小滑动距离阈值，避免轻微触碰就触发
             const minDelta = 10;
-            if (Math.abs(deltaY) < minDelta && !localGestureActiveRef.current) {
+            if (Math.abs(deltaY) < minDelta && !localGestureActive) {
               return;
             }
-            localGestureActiveRef.current = true;
+            localGestureActive = true;
             
             const maxChange = rect.height * 0.6;
             const normalizedDelta = Math.max(-1, Math.min(1, deltaY / maxChange));
@@ -1889,7 +1888,7 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
           playerEl.addEventListener('touchend', () => {
             localGestureStart = null;
             localGestureType = 'none';
-            localGestureActiveRef.current = false;
+            localGestureActive = false;
             hideIndicator();
           });
         }
@@ -2051,7 +2050,6 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
 
       // 移动端全屏事件监听
       artPlayerRef.current.on('fullscreen', async (state: boolean) => {
-        setIsFullscreen(state);
         isFullscreenRef.current = state;
         if (typeof window !== 'undefined') {
           if (state) {
@@ -2192,7 +2190,6 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
 
       // 网页全屏事件监听
       artPlayerRef.current.on('fullscreenWeb', async (state: boolean) => {
-        setIsFullscreen(state);
         isFullscreenRef.current = state;
         if (typeof window !== 'undefined') {
           if (state) {
