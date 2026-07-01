@@ -1726,6 +1726,7 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
           let localGestureStart: { x: number; y: number; time: number } | null = null;
           let localGestureType: 'volume' | 'brightness' | 'none' = 'none';
           let localInitialValue = 0;
+          let localGestureActiveRef = false;
           let indicatorTimeout: NodeJS.Timeout | null = null;
           
           // 创建指示器容器
@@ -1831,7 +1832,12 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
             const touch = e.touches[0];
             const rect = playerEl.getBoundingClientRect();
             const relativeX = touch.clientX - rect.left;
-            const isLeftSide = relativeX < rect.width / 2;
+            const edgeWidth = rect.width * 0.2; // 左右各20%边缘区域
+            
+            // 只在左右边缘区域内才触发手势控制
+            const isLeftEdge = relativeX < edgeWidth;
+            const isRightEdge = relativeX > rect.width - edgeWidth;
+            if (!isLeftEdge && !isRightEdge) return;
             
             localGestureStart = {
               x: touch.clientX,
@@ -1839,12 +1845,10 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
               time: Date.now(),
             };
             
-            localGestureType = isLeftSide ? 'brightness' : 'volume';
-            localInitialValue = isLeftSide 
+            localGestureType = isLeftEdge ? 'brightness' : 'volume';
+            localInitialValue = isLeftEdge 
               ? brightnessRef.current 
               : artPlayerRef.current.volume;
-            
-            showIndicator(localGestureType, localInitialValue);
           }, { passive: true });
           
           playerEl.addEventListener('touchmove', (e) => {
@@ -1854,6 +1858,14 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
             const touch = e.touches[0];
             const rect = playerEl.getBoundingClientRect();
             const deltaY = localGestureStart.y - touch.clientY;
+            
+            // 最小滑动距离阈值，避免轻微触碰就触发
+            const minDelta = 10;
+            if (Math.abs(deltaY) < minDelta && !localGestureActiveRef.current) {
+              return;
+            }
+            localGestureActiveRef.current = true;
+            
             const maxChange = rect.height * 0.6;
             const normalizedDelta = Math.max(-1, Math.min(1, deltaY / maxChange));
             
@@ -1877,6 +1889,7 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
           playerEl.addEventListener('touchend', () => {
             localGestureStart = null;
             localGestureType = 'none';
+            localGestureActiveRef.current = false;
             hideIndicator();
           });
         }
