@@ -192,20 +192,7 @@ function PlayPageClient() {
   const [showDownloadSelector, setShowDownloadSelector] = useState(false);
   const [downloadSelections, setDownloadSelections] = useState<Set<number>>(new Set());
 
-  // 手势控制相关状态
-  const [gestureState, setGestureState] = useState<{
-    active: boolean;
-    type: 'volume' | 'brightness' | 'none';
-    value: number;
-    initialValue: number;
-  }>({
-    active: false,
-    type: 'none',
-    value: 0,
-    initialValue: 0,
-  });
-  const gestureStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
-  const [brightness, setBrightness] = useState(1);
+  // 亮度和全屏状态
   const brightnessRef = useRef(1);
   const isFullscreenRef = useRef(false);
 
@@ -232,6 +219,8 @@ function PlayPageClient() {
 
   const artPlayerRef = useRef<any>(null);
   const artRef = useRef<HTMLDivElement | null>(null);
+  const blobUrlRef = useRef<string | null>(null);
+  const videoUrlRef = useRef<string>('');
 
   //  -----------------------------------------------------------------------------
   // 工具函数（Utils）
@@ -247,11 +236,21 @@ function PlayPageClient() {
       !detailData.episodes ||
       episodeIndex >= detailData.episodes.length
     ) {
+      if (blobUrlRef.current) {
+        URL.revokeObjectURL(blobUrlRef.current);
+        blobUrlRef.current = null;
+      }
       setVideoUrl('');
+      videoUrlRef.current = '';
       return;
     }
     const newUrl = detailData?.episodes[episodeIndex] || '';
-    if (newUrl !== videoUrl) {
+    if (newUrl !== videoUrlRef.current) {
+      if (blobUrlRef.current) {
+        URL.revokeObjectURL(blobUrlRef.current);
+        blobUrlRef.current = null;
+      }
+      videoUrlRef.current = newUrl;
       setVideoUrl(newUrl);
     }
   };
@@ -733,6 +732,8 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
           // 创建 M3U8 blob URL
           const m3u8Blob = new Blob([m3u8Content], { type: 'application/vnd.apple.mpegurl' });
           const blobUrl = URL.createObjectURL(m3u8Blob);
+          blobUrlRef.current = blobUrl;
+          videoUrlRef.current = blobUrl;
           setVideoUrl(blobUrl);
           setLoading(false);
         } catch (e) {
@@ -992,79 +993,6 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
   };
 
   // ---------------------------------------------------------------------------
-  // 手势控制
-  // ---------------------------------------------------------------------------
-  const handleGestureStart = (e: React.TouchEvent) => {
-    if (!artPlayerRef.current || !isFullscreenRef.current) return;
-    const touch = e.touches[0];
-    const container = e.currentTarget as HTMLElement;
-    const rect = container.getBoundingClientRect();
-    
-    gestureStartRef.current = {
-      x: touch.clientX,
-      y: touch.clientY,
-      time: Date.now(),
-    };
-
-    const relativeX = touch.clientX - rect.left;
-    const isLeftSide = relativeX < rect.width / 2;
-
-    const initialValue = isLeftSide 
-      ? brightnessRef.current 
-      : artPlayerRef.current.volume;
-
-    setGestureState({
-      active: true,
-      type: isLeftSide ? 'brightness' : 'volume',
-      value: initialValue,
-      initialValue,
-    });
-  };
-
-  const handleGestureMove = (e: React.TouchEvent) => {
-    if (!gestureStartRef.current || !gestureState.active || !artPlayerRef.current) return;
-    
-    const touch = e.touches[0];
-    const container = e.currentTarget as HTMLElement;
-    const rect = container.getBoundingClientRect();
-    
-    const deltaY = gestureStartRef.current.y - touch.clientY;
-    const maxChange = rect.height * 0.6;
-    const normalizedDelta = Math.max(-1, Math.min(1, deltaY / maxChange));
-
-    if (gestureState.type === 'volume') {
-      const newVolume = Math.max(0, Math.min(1, gestureState.initialValue + normalizedDelta));
-      const roundedVolume = Math.round(newVolume * 100) / 100;
-      artPlayerRef.current.volume = roundedVolume;
-      lastVolumeRef.current = roundedVolume;
-      setGestureState(prev => ({ ...prev, value: roundedVolume }));
-    } else if (gestureState.type === 'brightness') {
-      const newBrightness = Math.max(0.2, Math.min(1, gestureState.initialValue + normalizedDelta * 0.8));
-      const roundedBrightness = Math.round(newBrightness * 100) / 100;
-      brightnessRef.current = roundedBrightness;
-      setBrightness(roundedBrightness);
-      // 直接应用到视频播放器元素，确保全屏时也生效
-      const videoPlayer = document.querySelector('.art-video-player');
-      if (videoPlayer) {
-        (videoPlayer as HTMLElement).style.filter = `brightness(${roundedBrightness})`;
-      }
-      setGestureState(prev => ({ ...prev, value: roundedBrightness }));
-    }
-  };
-
-  const handleGestureEnd = () => {
-    gestureStartRef.current = null;
-    setTimeout(() => {
-      setGestureState({
-        active: false,
-        type: 'none',
-        value: 0,
-        initialValue: 0,
-      });
-    }, 500);
-  };
-
-  // ---------------------------------------------------------------------------
   // 键盘快捷键
   // ---------------------------------------------------------------------------
   // 处理全局快捷键
@@ -1222,11 +1150,42 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
     };
   }, [currentEpisodeIndex, detail, artPlayerRef.current]);
 
-  // 清理定时器
+  // 当组件卸载时清理资源
   useEffect(() => {
     return () => {
       if (saveIntervalRef.current) {
         clearInterval(saveIntervalRef.current);
+      }
+      if (blobUrlRef.current) {
+        URL.revokeObjectURL(blobUrlRef.current);
+        blobUrlRef.current = null;
+      }
+      if (artPlayerRef.current) {
+        if (artPlayerRef.current.video && artPlayerRef.current.video.hls) {
+          artPlayerRef.current.video.hls.destroy();
+        }
+        try { artPlayerRef.current.destroy(); } catch {}
+        artPlayerRef.current = null;
+      }
+      if ((window as any).__localVideoCtx) {
+        delete (window as any).__localVideoCtx;
+      }
+      document.body.style.overflow = '';
+      document.documentElement.style.overflow = '';
+      const playerEl = document.querySelector('.art-video-player') as HTMLElement | null;
+      if (playerEl) {
+        playerEl.style.filter = '';
+        playerEl.style.transform = '';
+        playerEl.style.transformOrigin = '';
+        playerEl.style.width = '';
+        playerEl.style.height = '';
+        playerEl.style.position = '';
+        playerEl.style.top = '';
+        playerEl.style.left = '';
+        playerEl.style.zIndex = '';
+        playerEl.style.backgroundColor = '';
+        playerEl.style.marginLeft = '';
+        playerEl.style.marginTop = '';
       }
     };
   }, []);
@@ -1878,8 +1837,6 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
               const newBrightness = Math.max(0.2, Math.min(1, localInitialValue + normalizedDelta * 0.8));
               const roundedBrightness = Math.round(newBrightness * 100) / 100;
               brightnessRef.current = roundedBrightness;
-              setBrightness(roundedBrightness);
-              // 应用到播放器元素
               playerEl.style.filter = `brightness(${roundedBrightness})`;
               showIndicator('brightness', roundedBrightness);
             }
@@ -1943,34 +1900,45 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
         setIsVideoLoading(false);
       });
 
-      // 监听视频时间更新事件，实现跳过片头片尾
+      // 监听视频时间更新事件（跳过片头片尾 + 定时保存进度）
       artPlayerRef.current.on('video:timeupdate', () => {
-        if (!skipConfigRef.current.enable) return;
-
         const currentTime = artPlayerRef.current.currentTime || 0;
         const duration = artPlayerRef.current.duration || 0;
 
-        // 跳过片头
-        if (
-          skipConfigRef.current.intro_time > 0 &&
-          currentTime < skipConfigRef.current.intro_time
-        ) {
-          artPlayerRef.current.currentTime = skipConfigRef.current.intro_time;
-          artPlayerRef.current.notice.show = `已跳过片头 (${formatTime(
-            skipConfigRef.current.intro_time
-          )})`;
+        if (skipConfigRef.current.enable) {
+          if (
+            skipConfigRef.current.intro_time > 0 &&
+            currentTime < skipConfigRef.current.intro_time
+          ) {
+            artPlayerRef.current.currentTime = skipConfigRef.current.intro_time;
+            artPlayerRef.current.notice.show = `已跳过片头 (${formatTime(
+              skipConfigRef.current.intro_time
+            )})`;
+          }
+
+          if (
+            skipConfigRef.current.outro_time > 0 &&
+            duration > 0 &&
+            currentTime > skipConfigRef.current.outro_time
+          ) {
+            handleNextEpisode();
+            artPlayerRef.current.notice.show = `已跳过片尾 (${formatTime(
+              skipConfigRef.current.outro_time
+            )})`;
+          }
         }
 
-        // 跳过片尾
-        if (
-          skipConfigRef.current.outro_time > 0 &&
-          duration > 0 &&
-          currentTime > skipConfigRef.current.outro_time
-        ) {
-          handleNextEpisode();
-          artPlayerRef.current.notice.show = `已跳过片尾 (${formatTime(
-            skipConfigRef.current.outro_time
-          )})`;
+        const now = Date.now();
+        let interval = 5000;
+        if (process.env.NEXT_PUBLIC_STORAGE_TYPE === 'd1') {
+          interval = 10000;
+        }
+        if (process.env.NEXT_PUBLIC_STORAGE_TYPE === 'upstash') {
+          interval = 20000;
+        }
+        if (now - lastSaveTimeRef.current > interval) {
+          saveCurrentPlayProgress();
+          lastSaveTimeRef.current = now;
         }
       });
 
@@ -2026,21 +1994,6 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
           setTimeout(() => {
             setCurrentEpisodeIndex(idx + 1);
           }, 1000);
-        }
-      });
-
-      artPlayerRef.current.on('video:timeupdate', () => {
-        const now = Date.now();
-        let interval = 5000;
-        if (process.env.NEXT_PUBLIC_STORAGE_TYPE === 'd1') {
-          interval = 10000;
-        }
-        if (process.env.NEXT_PUBLIC_STORAGE_TYPE === 'upstash') {
-          interval = 20000;
-        }
-        if (now - lastSaveTimeRef.current > interval) {
-          saveCurrentPlayProgress();
-          lastSaveTimeRef.current = now;
         }
       });
 
@@ -2312,16 +2265,6 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
       setError('播放器初始化失败');
     }
   }, [Artplayer, Hls, videoUrl, loading, blockAdEnabled, isLocalPlayback]);
-
-  // 当组件卸载时清理定时器
-  useEffect(() => {
-    return () => {
-      if (saveIntervalRef.current) {
-        clearInterval(saveIntervalRef.current);
-      }
-    };
-  }, []);
-
   if (loading) {
     return (
       <PageLayout activePath='/play'>
@@ -2613,74 +2556,11 @@ class CustomHlsJsLoader extends Hls.DefaultConfig.loader {
                 isEpisodeSelectorCollapsed ? 'col-span-1' : 'md:col-span-3'
               }`}
             >
-              <div 
-                className='relative w-full h-[300px] lg:h-full'
-                onTouchStart={handleGestureStart}
-                onTouchMove={handleGestureMove}
-                onTouchEnd={handleGestureEnd}
-              >
+              <div className='relative w-full h-[300px] lg:h-full'>
                 <div
                   ref={artRef}
                   className='bg-black w-full h-full rounded-2xl overflow-hidden shadow-lg'
-                  style={{ 
-                    filter: `brightness(${brightness})`,
-                    transition: gestureState.active ? 'none' : 'filter 0.3s ease'
-                  }}
                 />
-
-                {/* 亮度/音量手势指示器 */}
-                {gestureState.active && (
-                  <>
-                    {/* 左侧亮度指示器 */}
-                    {gestureState.type === 'brightness' && (
-                      <>
-                        <div className='gesture-progress-bar gesture-progress-bar-left'>
-                          <div 
-                            className='gesture-progress-fill'
-                            style={{ 
-                              height: `${Math.max(0, Math.min(100, ((gestureState.value - 0.2) / 0.8) * 100))}%`,
-                              background: 'linear-gradient(to top, #fbbf24, #f59e0b)'
-                            }}
-                          />
-                        </div>
-                        <div className='gesture-indicator gesture-indicator-left show'>
-                          <svg className='w-5 h-5' fill='none' viewBox='0 0 24 24' stroke='currentColor'>
-                            <path strokeLinecap='round' strokeLinejoin='round' strokeWidth={2} 
-                              d='M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z' />
-                          </svg>
-                          <span>{Math.round(((gestureState.value - 0.2) / 0.8) * 100)}%</span>
-                        </div>
-                      </>
-                    )}
-                    
-                    {/* 右侧音量指示器 */}
-                    {gestureState.type === 'volume' && (
-                      <>
-                        <div className='gesture-progress-bar gesture-progress-bar-right'>
-                          <div 
-                            className='gesture-progress-fill'
-                            style={{ height: `${gestureState.value * 100}%` }}
-                          />
-                        </div>
-                        <div className='gesture-indicator gesture-indicator-right show'>
-                          <svg className='w-5 h-5' fill='none' viewBox='0 0 24 24' stroke='currentColor'>
-                            {gestureState.value > 0.5 ? (
-                              <path strokeLinecap='round' strokeLinejoin='round' strokeWidth={2} 
-                                d='M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z' />
-                            ) : gestureState.value > 0 ? (
-                              <path strokeLinecap='round' strokeLinejoin='round' strokeWidth={2} 
-                                d='M15.536 8.464a5 5 0 010 7.072M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z' />
-                            ) : (
-                              <path strokeLinecap='round' strokeLinejoin='round' strokeWidth={2} 
-                                d='M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15zM17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2' />
-                            )}
-                          </svg>
-                          <span>{Math.round(gestureState.value * 100)}%</span>
-                        </div>
-                      </>
-                    )}
-                  </>
-                )}
 
                 {/* 换源加载蒙层 */}
                 {isVideoLoading && (
