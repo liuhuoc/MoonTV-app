@@ -27,30 +27,6 @@ function freezeEntranceAnimations(): void {
     .forEach((el) => el.classList.remove(...ENTRANCE_CLASSES));
 }
 
-const REVEAL_MS = 560;
-
-/**
- * App 内的轻量揭幕：主题已经同步切换完毕，这里只叠一个不含页面内容的
- * 纯色 fixed 层做 clip-path 揭幕动画，合成成本与首页卡片数量无关。
- */
-function playReveal(direction: 'down' | 'up'): void {
-  if (typeof document === 'undefined') return;
-
-  // 连续点击时先清掉上一层，避免叠加
-  document.querySelectorAll('.theme-reveal').forEach((el) => el.remove());
-
-  const layer = document.createElement('div');
-  layer.className =
-    direction === 'up' ? 'theme-reveal theme-reveal--up' : 'theme-reveal';
-  // 切换后读取新主题的真实底色，保证幕布与页面无色差
-  layer.style.setProperty(
-    '--reveal-color',
-    getComputedStyle(document.body).backgroundColor
-  );
-  document.body.appendChild(layer);
-  window.setTimeout(() => layer.remove(), REVEAL_MS);
-}
-
 /** 只更新状态栏颜色，不再写 html/body 的 inline 背景（会与 CSS 主题色打架） */
 function setThemeColorMeta(theme?: string): void {
   if (typeof document === 'undefined') return;
@@ -64,20 +40,6 @@ function setThemeColorMeta(theme?: string): void {
     document.head.appendChild(meta);
   }
   meta.content = color;
-}
-
-/**
- * Capacitor WebView 上 View Transition 需要截取整页位图快照，
- * 首页 DOM/图片量大时合成会按块栅格化，出现「一块一块变化」。
- * App 内直接同步切主题，浏览器里才保留轻量淡入。
- */
-function isCapacitorWebView(): boolean {
-  if (typeof window === 'undefined') return false;
-  const cap = (window as any).Capacitor;
-  if (!cap) return false;
-  return typeof cap.isNativePlatform === 'function'
-    ? Boolean(cap.isNativePlatform())
-    : true;
 }
 
 export function ThemeToggle() {
@@ -99,16 +61,14 @@ export function ThemeToggle() {
 
     freezeEntranceAnimations();
 
-    // flushSync 保证 DOM 在 View Transition 捕获新快照之前已经更新完毕
+    // flushSync 保证卷轴动画捕获到的是完整的新主题快照
     const applyTheme = () => {
       setThemeColorMeta(targetTheme);
       flushSync(() => setTheme(targetTheme));
     };
 
-    if (isCapacitorWebView() || !(document as any).startViewTransition) {
+    if (!(document as any).startViewTransition) {
       applyTheme();
-      // App 内不截整页位图，用一个纯色合成层保留揭幕观感
-      playReveal(targetTheme === 'dark' ? 'down' : 'up');
       return;
     }
 
