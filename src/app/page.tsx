@@ -6,6 +6,7 @@ import { ArrowRight, Search } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Suspense, useEffect, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
 
 import { getDoubanCategories } from '@/lib/douban.client';
 import { DoubanItem } from '@/lib/types';
@@ -24,6 +25,43 @@ type CategoryCache = {
 };
 
 let __categoryCache: CategoryCache | null = null;
+
+/** 定义在组件外：避免 HomeClient 每次重渲染都产生新的组件类型、卸载重建整棵子树并重播入场动画 */
+function SkeletonCard() {
+  return (
+    <div className='min-w-[120px] w-28 sm:min-w-[200px] sm:w-48'>
+      <div className='relative aspect-[2/3] w-full overflow-hidden rounded-xl bg-gray-200 dark:bg-gray-800 shimmer' />
+      <div className='mt-3 h-4 w-3/4 rounded-md bg-gray-200 dark:bg-gray-800 shimmer' />
+      <div className='mt-2 h-3 w-1/2 rounded-md bg-gray-200 dark:bg-gray-800 shimmer' />
+    </div>
+  );
+}
+
+function ContentSection({
+  title,
+  href,
+  children,
+}: {
+  title: string;
+  href: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className='mb-10 sm:mb-14'>
+      <div className='mb-5 flex items-center justify-between'>
+        <h2 className='text-2xl font-bold text-gradient'>{title}</h2>
+        <Link
+          href={href}
+          className='flex items-center text-sm text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 transition-colors'
+          aria-label={`查看更多${title}`}
+        >
+          <ArrowRight className='w-5 h-5' />
+        </Link>
+      </div>
+      <ScrollableRow>{children}</ScrollableRow>
+    </section>
+  );
+}
 
 function HomeClient() {
   const router = useRouter();
@@ -99,42 +137,6 @@ function HomeClient() {
 
     fetchDoubanData();
   }, []);
-
-  // 骨架屏卡片
-  const SkeletonCard = () => (
-    <div className='min-w-[120px] w-28 sm:min-w-[200px] sm:w-48'>
-      <div className='relative aspect-[2/3] w-full overflow-hidden rounded-xl bg-gray-200 dark:bg-gray-800 shimmer' />
-      <div className='mt-3 h-4 w-3/4 rounded-md bg-gray-200 dark:bg-gray-800 shimmer' />
-      <div className='mt-2 h-3 w-1/2 rounded-md bg-gray-200 dark:bg-gray-800 shimmer' />
-    </div>
-  );
-
-  // 带标题和横向滚动的内容区块
-  const ContentSection = ({
-    title,
-    href,
-    children,
-  }: {
-    title: string;
-    href: string;
-    children: React.ReactNode;
-  }) => (
-    <section className='mb-10 sm:mb-14'>
-      <div className='mb-5 flex items-center justify-between'>
-        <h2 className='text-2xl font-bold text-gradient'>
-          {title}
-        </h2>
-        <Link
-          href={href}
-          className='flex items-center text-sm text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 transition-colors'
-          aria-label={`查看更多${title}`}
-        >
-          <ArrowRight className='w-5 h-5' />
-        </Link>
-      </div>
-      <ScrollableRow>{children}</ScrollableRow>
-    </section>
-  );
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();

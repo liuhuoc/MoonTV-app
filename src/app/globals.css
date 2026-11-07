@@ -32,8 +32,6 @@
   body {
     color: #e5e7eb;
     background: #0a0a0f;
-    transition: background-color var(--animation-duration-normal) var(--easing-standard),
-                color var(--animation-duration-normal) var(--easing-standard);
   }
 
   html.dark body,
@@ -246,19 +244,14 @@
   50% { opacity: 0.6; }
 }
 
-@keyframes slide-from-top {
-  from { clip-path: polygon(0 0, 100% 0, 100% 0, 0 0); }
-  to { clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%); }
+/* 主题切换只做一次轻量的整页交叉淡入。
+   旧的 clip-path 揭幕会对整页位图逐帧重新光栅化，
+   在 Android WebView 的长页面上按 tile 分块合成，表现为「一块一块变化」。 */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 150ms;
+  animation-timing-function: ease-out;
 }
-
-@keyframes slide-from-bottom {
-  from { clip-path: polygon(0 100%, 100% 100%, 100% 100%, 0 100%); }
-  to { clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%); }
-}
-
-::view-transition-old(root) { animation: none; }
-html.dark::view-transition-new(root) { animation: slide-from-top 0.5s cubic-bezier(0.4, 0, 0.2, 1); }
-html:not(.dark)::view-transition-new(root) { animation: slide-from-bottom 0.5s cubic-bezier(0.4, 0, 0.2, 1); }
 
 ::-webkit-scrollbar {
   width: 4px;
