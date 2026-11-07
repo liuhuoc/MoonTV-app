@@ -27,6 +27,30 @@ function freezeEntranceAnimations(): void {
     .forEach((el) => el.classList.remove(...ENTRANCE_CLASSES));
 }
 
+const REVEAL_MS = 560;
+
+/**
+ * App 内的轻量揭幕：主题已经同步切换完毕，这里只叠一个不含页面内容的
+ * 纯色 fixed 层做 clip-path 揭幕动画，合成成本与首页卡片数量无关。
+ */
+function playReveal(direction: 'down' | 'up'): void {
+  if (typeof document === 'undefined') return;
+
+  // 连续点击时先清掉上一层，避免叠加
+  document.querySelectorAll('.theme-reveal').forEach((el) => el.remove());
+
+  const layer = document.createElement('div');
+  layer.className =
+    direction === 'up' ? 'theme-reveal theme-reveal--up' : 'theme-reveal';
+  // 切换后读取新主题的真实底色，保证幕布与页面无色差
+  layer.style.setProperty(
+    '--reveal-color',
+    getComputedStyle(document.body).backgroundColor
+  );
+  document.body.appendChild(layer);
+  window.setTimeout(() => layer.remove(), REVEAL_MS);
+}
+
 /** 只更新状态栏颜色，不再写 html/body 的 inline 背景（会与 CSS 主题色打架） */
 function setThemeColorMeta(theme?: string): void {
   if (typeof document === 'undefined') return;
@@ -83,6 +107,8 @@ export function ThemeToggle() {
 
     if (isCapacitorWebView() || !(document as any).startViewTransition) {
       applyTheme();
+      // App 内不截整页位图，用一个纯色合成层保留揭幕观感
+      playReveal(targetTheme === 'dark' ? 'down' : 'up');
       return;
     }
 

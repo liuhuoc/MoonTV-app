@@ -244,13 +244,62 @@
   50% { opacity: 0.6; }
 }
 
-/* 主题切换只做一次轻量的整页交叉淡入。
-   旧的 clip-path 揭幕会对整页位图逐帧重新光栅化，
-   在 Android WebView 的长页面上按 tile 分块合成，表现为「一块一块变化」。 */
-::view-transition-old(root),
-::view-transition-new(root) {
-  animation-duration: 150ms;
-  animation-timing-function: ease-out;
+/* ── 浏览器：View Transition 真内容揭幕 ──────────────────────────
+   只有浏览器会调用 startViewTransition；App 内不走 View Transition，
+   因此这些规则不会在 Android WebView 上触发整页位图的分块光栅化。 */
+@keyframes slide-from-top {
+  from { clip-path: polygon(0 0, 100% 0, 100% 0, 0 0); }
+  to { clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%); }
+}
+
+@keyframes slide-from-bottom {
+  from { clip-path: polygon(0 100%, 100% 100%, 100% 100%, 0 100%); }
+  to { clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%); }
+}
+
+::view-transition-old(root) { animation: none; }
+html.dark::view-transition-new(root) { animation: slide-from-top 0.45s cubic-bezier(0.4, 0, 0.2, 1); }
+html:not(.dark)::view-transition-new(root) { animation: slide-from-bottom 0.45s cubic-bezier(0.4, 0, 0.2, 1); }
+
+/* ── App：纯色合成层揭幕 ────────────────────────────────────────
+   主题由 flushSync 同步切换，只让一个不含页面内容的 fixed 层做
+   clip-path 动画，合成成本与首页卡片数量无关。 */
+.theme-reveal {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  background: var(--reveal-color, transparent);
+  opacity: 0.22;
+  will-change: clip-path, opacity;
+  animation: theme-reveal-down 360ms cubic-bezier(0.4, 0, 0.2, 1) forwards,
+             theme-reveal-fade 160ms 360ms ease-out forwards;
+}
+
+.theme-reveal--up {
+  animation-name: theme-reveal-up, theme-reveal-fade;
+}
+
+@keyframes theme-reveal-down {
+  from { clip-path: inset(0 0 100% 0); }
+  to { clip-path: inset(0 0 0 0); }
+}
+
+@keyframes theme-reveal-up {
+  from { clip-path: inset(100% 0 0 0); }
+  to { clip-path: inset(0 0 0 0); }
+}
+
+@keyframes theme-reveal-fade {
+  from { opacity: 0.22; }
+  to { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theme-reveal {
+    animation-duration: 1ms, 1ms;
+    animation-delay: 0ms, 0ms;
+  }
 }
 
 ::-webkit-scrollbar {
