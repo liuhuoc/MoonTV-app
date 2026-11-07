@@ -1,64 +1,72 @@
-import type { ApiSite } from './downstream';
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/**
+ * 视频源配置 —— 数据来源改为 config.json 生成的 runtime.ts（与 Web 版一致）。
+ * 旧版把 20 个源硬编码在这里，和 config.json 容易不同步；现在单一数据源。
+ */
 
-// 视频源列表 - 编译时内嵌
-const API_SITES: ApiSite[] = [
-  { key: 'dyttzy', api: 'http://caiji.dyttzyapi.com/api.php/provide/vod', name: '电影天堂资源', detail: 'http://caiji.dyttzyapi.com' },
-  { key: 'heimuer', api: 'https://json.heimuer.xyz/api.php/provide/vod', name: '黑木耳', detail: 'https://heimuer.tv' },
-  { key: 'ruyi', api: 'https://cj.rycjapi.com/api.php/provide/vod', name: '如意资源' },
-  { key: 'bfzy', api: 'https://bfzyapi.com/api.php/provide/vod', name: '暴风资源' },
-  { key: 'tyyszy', api: 'https://tyyszy.com/api.php/provide/vod', name: '天涯资源' },
-  { key: 'ffzy', api: 'http://ffzy5.tv/api.php/provide/vod', name: '非凡影视', detail: 'http://ffzy5.tv' },
-  { key: 'zy360', api: 'https://360zy.com/api.php/provide/vod', name: '360资源' },
-  { key: 'maotaizy', api: 'https://caiji.maotaizy.cc/api.php/provide/vod', name: '茅台资源' },
-  { key: 'wolong', api: 'https://wolongzyw.com/api.php/provide/vod', name: '卧龙资源' },
-  { key: 'jisu', api: 'https://jszyapi.com/api.php/provide/vod', name: '极速资源', detail: 'https://jszyapi.com' },
-  { key: 'dbzy', api: 'https://dbzy.tv/api.php/provide/vod', name: '豆瓣资源' },
-  { key: 'mozhua', api: 'https://mozhuazy.com/api.php/provide/vod', name: '魔爪资源' },
-  { key: 'mdzy', api: 'https://www.mdzyapi.com/api.php/provide/vod', name: '魔都资源' },
-  { key: 'zuid', api: 'https://api.zuidapi.com/api.php/provide/vod', name: '最大资源' },
-  { key: 'yinghua', api: 'https://m3u8.apiyhzy.com/api.php/provide/vod', name: '樱花资源' },
-  { key: 'wujin', api: 'https://api.wujinapi.me/api.php/provide/vod', name: '无尽资源' },
-  { key: 'wwzy', api: 'https://wwzy.tv/api.php/provide/vod', name: '旺旺短剧' },
-  { key: 'ikun', api: 'https://ikunzyapi.com/api.php/provide/vod', name: 'iKun资源' },
-  { key: 'lzi', api: 'https://cj.lziapi.com/api.php/provide/vod', name: '量子资源站' },
-  { key: 'xiaomaomi', api: 'https://zy.xmm.hk/api.php/provide/vod', name: '小猫咪资源' },
-];
+import type { ApiSite } from './downstream';
+import { healthSnapshot, orderSites } from './source-health';
+import config from './runtime';
+
+const rawSites = ((config as any).api_site || {}) as Record<
+  string,
+  { api?: string; name?: string; detail?: string; disabled?: boolean }
+>;
+
+const API_SITES: ApiSite[] = Object.entries(rawSites)
+  .filter(([, v]) => Boolean(v && v.api))
+  .map(([key, v]) => ({
+    key,
+    api: String(v.api),
+    name: String(v.name || key),
+    detail: v.detail ? String(v.detail) : undefined,
+    disabled: Boolean(v.disabled),
+  }));
+
+const defaultEnabled = (): ApiSite[] => API_SITES.filter((s) => !s.disabled);
 
 /**
- * 获取所有可用视频源（纯客户端，同步）
- * 会根据 localStorage 中的 enabledSources 过滤禁用的源
+ * 获取本次请求可用的源（已按健康度排序：快的先发，熔断中的跳过）。
+ * localStorage 里的显式选择优先，因此设置页可以手动启用 disabled 的备用源。
  */
 export function getAvailableApiSites(): ApiSite[] {
-  if (typeof window === 'undefined') return API_SITES;
-  try {
-    const raw = localStorage.getItem('enabledSources');
-    if (raw) {
-      const enabledKeys = new Set(JSON.parse(raw) as string[]);
-      if (enabledKeys.size > 0) {
-        return API_SITES.filter(s => enabledKeys.has(s.key));
+  let base = defaultEnabled();
+  if (typeof window !== 'undefined') {
+    try {
+      const raw = window.localStorage.getItem('enabledSources');
+      if (raw) {
+        const keys = new Set(JSON.parse(raw) as string[]);
+        if (keys.size > 0) base = API_SITES.filter((s) => keys.has(s.key));
       }
+    } catch {
+      /* ignore */
     }
-  } catch { /* ignore */ }
-  return API_SITES;
+  }
+  return orderSites(base);
 }
 
-/**
- * 获取全部视频源（不过滤，用于设置页面源管理）
- */
+/** 全部源（含默认禁用的备用源），用于设置页源管理 */
 export function getAllApiSites(): ApiSite[] {
   return API_SITES;
 }
 
-/**
- * 获取站点名称
- */
+const siteConfig = ((config as any).admin_config?.SiteConfig || {}) as Record<
+  string,
+  any
+>;
+
 export function getSiteName(): string {
-  return 'MoonTV';
+  return siteConfig.SiteName || 'MoonTV';
 }
 
-/**
- * 获取站点公告
- */
 export function getAnnouncement(): string {
-  return '本网站仅提供影视信息搜索服务，所有内容均来自第三方网站。';
+  return (
+    siteConfig.Announcement ||
+    '本站仅提供影视信息搜索服务，所有内容均来自第三方网站。'
+  );
+}
+
+/** 供设置页 / 调试查看各源真实健康度 */
+export function getSourceHealth() {
+  return healthSnapshot(API_SITES);
 }

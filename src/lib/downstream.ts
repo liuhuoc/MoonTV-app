@@ -2,6 +2,7 @@ import { getAvailableApiSites } from '@/lib/config';
 import { SearchResult } from '@/lib/types';
 import { cleanHtmlTags } from '@/lib/utils';
 import { nativeFetch } from '@/lib/capacitor-http';
+import { recordFail, recordOk } from '@/lib/source-health';
 
 interface ApiSearchItem {
   vod_id: string;
@@ -21,6 +22,8 @@ export interface ApiSite {
   api: string;
   name: string;
   detail?: string;
+  /** config.json 中标记为备用的源，默认不参与搜索，可在设置页手动启用 */
+  disabled?: boolean;
 }
 
 export const API_CONFIG = {
@@ -47,6 +50,7 @@ export async function searchFromApi(
   apiSite: ApiSite,
   query: string
 ): Promise<SearchResult[]> {
+  const t0 = Date.now();
   try {
     const apiBaseUrl = apiSite.api;
     const apiUrl =
@@ -59,16 +63,19 @@ export async function searchFromApi(
     });
 
     if (!response.ok) {
+      recordFail(apiSite.key);
       return [];
     }
 
     const data = await response.json();
+    // 接口正常响应但没有匹配结果也算「健康」，不因冷门关键词误熔断该源
     if (
       !data ||
       !data.list ||
       !Array.isArray(data.list) ||
       data.list.length === 0
     ) {
+      recordOk(apiSite.key, Date.now() - t0);
       return [];
     }
 
@@ -86,11 +93,7 @@ export async function searchFromApi(
         });
       }
 
-      episodes = Array.from(new Set(episodes)).map((link: string) => {
-        link = link.substring(1);
-        const parenIndex = link.indexOf('(');
-        return parenIndex > 0 ? link.substring(0, parenIndex) : link;
-      });
+      episodes = normalizeEpisodeLinks(episodes);
 
       return {
         id: item.vod_id.toString(),
@@ -145,11 +148,7 @@ export async function searchFromApi(
                 episodes = item.vod_play_url.match(m3u8Regex) || [];
               }
 
-              episodes = Array.from(new Set(episodes)).map((link: string) => {
-                link = link.substring(1);
-                const parenIndex = link.indexOf('(');
-                return parenIndex > 0 ? link.substring(0, parenIndex) : link;
-              });
+              episodes = normalizeEpisodeLinks(episodes);
 
               return {
                 id: item.vod_id.toString(),
@@ -184,8 +183,10 @@ export async function searchFromApi(
       });
     }
 
+    recordOk(apiSite.key, Date.now() - t0);
     return results;
   } catch (error) {
+    recordFail(apiSite.key);
     return [];
   }
 }
@@ -471,7 +472,15 @@ export async function fetchVideoDetail({
     }
   }
 
-  const detail = await getDetailFromApi(apiSite, id);
+  const t0 = Date.now();
+  let detail: SearchResult | undefined;
+  try {
+    detail = await getDetailFromApi(apiSite, id);
+    recordOk(apiSite.key, Date.now() - t0);
+  } catch (error) {
+    recordFail(apiSite.key);
+    throw error;
+  }
   if (!detail) {
     throw new Error('获取视频详情失败');
   }

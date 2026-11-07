@@ -49,12 +49,12 @@ export default function SettingsPage() {
   const allApiSites = getAllApiSites();
 
   function getEnabledSources(): Set<string> {
-    if (typeof window === 'undefined') return new Set(allApiSites.map(s => s.key));
+    if (typeof window === 'undefined') return new Set(allApiSites.filter(s => !s.disabled).map(s => s.key));
     try {
       const raw = localStorage.getItem(ENABLED_SOURCES_KEY);
       if (raw) return new Set(JSON.parse(raw));
     } catch { /* ignore */ }
-    return new Set(allApiSites.map(s => s.key));
+    return new Set(allApiSites.filter(s => !s.disabled).map(s => s.key));
   }
 
   function saveEnabledSources(sources: Set<string>): void {
@@ -186,11 +186,11 @@ export default function SettingsPage() {
       localStorage.setItem('imageProxyUrl', '');
       localStorage.setItem('categoryCacheMinutes', '60');
       saveDownloadSettings({ maxConcurrent: 2, autoCleanup: true, downloadThreads: 3 });
-      saveEnabledSources(new Set(allApiSites.map(s => s.key)));
+      saveEnabledSources(new Set(allApiSites.filter(s => !s.disabled).map(s => s.key)));
       saveSourceStatuses({});
       saveCustomSources([]);
     }
-    setEnabledSources(new Set(allApiSites.map(s => s.key)));
+    setEnabledSources(new Set(allApiSites.filter(s => !s.disabled).map(s => s.key)));
     setSourceStatuses({});
     setCustomSources([]);
     setAllSources([...allApiSites]);
